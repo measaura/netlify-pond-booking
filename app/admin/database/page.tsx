@@ -161,7 +161,7 @@ export default function DatabaseUtilsPage() {
                 </div>
                 <div className="bg-green-50 p-3 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">{checkIns.length}</div>
-                  <div className="text-sm text-gray-600">Today's Check-ins</div>
+                  <div className="text-sm text-gray-600">Today&apos;s Check-ins</div>
                 </div>
                 <div className="bg-orange-50 p-3 rounded-lg">
                   <div className="text-2xl font-bold text-orange-600">{stats.currentlyCheckedIn}</div>
@@ -275,7 +275,7 @@ export default function DatabaseUtilsPage() {
                   <li>Create sample bookings and check-ins above</li>
                   <li>Login as manager: pond.manager@gmail.com / 123456@$</li>
                   <li>Go to Admin → QR Scanner</li>
-                  <li>Use "Valid Scan" demo button to simulate scanning</li>
+                  <li>Use &quot;Valid Scan&quot; demo button to simulate scanning</li>
                   <li>Or use real QR codes from the ticket page</li>
                 </ol>
               </div>

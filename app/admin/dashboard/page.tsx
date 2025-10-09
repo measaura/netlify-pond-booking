@@ -141,7 +141,7 @@ export default function AdminDashboardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <TrendingUp className="h-5 w-5" />
-                Today's Activity
+                Today&apos;s Activity
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

@@ -203,7 +203,7 @@ function TicketContent() {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">No Booking Found</h2>
           <p className="text-gray-600 mb-4">
-            It looks like you haven't completed a booking yet, or the booking data has expired.
+            It looks like you haven&apos;t completed a booking yet, or the booking data has expired.
           </p>
           <div className="space-y-2">
             <Link href="/">

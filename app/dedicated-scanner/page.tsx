@@ -770,7 +770,7 @@ export default function DedicatedScannerPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Today's Check-ins ({todayCheckIns.length})
+                Today&apos;s Check-ins ({todayCheckIns.length})
               </CardTitle>
             </CardHeader>
             <CardContent>

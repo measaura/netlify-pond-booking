@@ -38,7 +38,7 @@ export default function RootLayout({
           src="//unpkg.com/same-runtime/dist/index.global.js"
         />
         {/* Fallback Tailwind CDN for same.new compatibility */}
-        <script src="https://cdn.tailwindcss.com"></script>
+        <Script src="https://cdn.tailwindcss.com"></Script>
         {/* Force CSS to load early for same.new */}
         <style>{`
           html { background: white; }

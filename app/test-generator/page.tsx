@@ -475,8 +475,8 @@ export default function TestGeneratorPage() {
               <div className="p-3 bg-red-50 rounded-lg border border-red-200">
                 <h4 className="font-semibold text-red-800 mb-2">❌ Invalid Scenarios</h4>
                 <ul className="text-red-700 space-y-1">
-                  <li>• <strong>Past Event QRs</strong>: Yesterday's events - wrong date</li>
-                  <li>• <strong>Future Event QRs</strong>: Tomorrow's events - wrong date</li>
+                  <li>• <strong>Past Event QRs</strong>: Yesterday&apos;s events - wrong date</li>
+                  <li>• <strong>Future Event QRs</strong>: Tomorrow&apos;s events - wrong date</li>
                   <li>• <strong>Past/Future weeks</strong>: Wrong date</li>
                   <li>• <strong>Outside time slots</strong>: Wrong time</li>
                 </ul>
@@ -489,7 +489,7 @@ export default function TestGeneratorPage() {
                   <li>2. Download QR codes</li>
                   <li>3. Transfer to phone via AirDrop</li>
                   <li>4. Test with scanner at /scanner or /dedicated-scanner</li>
-                  <li>5. Record catches using "Add Catch" tab</li>
+                  <li>5. Record catches using &quot;Add Catch&quot; tab</li>
                 </ol>
               </div>
             </CardContent>

@@ -153,7 +153,7 @@ export default function ManagerReportsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-3 bg-green-50 rounded-lg">
                   <div className="text-2xl font-bold text-green-600">${todayRevenue}</div>
-                  <div className="text-sm text-gray-600">Today's Revenue</div>
+                  <div className="text-sm text-gray-600">Today&apos;s Revenue</div>
                 </div>
                 <div className="text-center p-3 bg-blue-50 rounded-lg">
                   <div className="text-2xl font-bold text-blue-600">${totalRevenue}</div>
@@ -267,7 +267,7 @@ export default function ManagerReportsPage() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Users className="h-5 w-5 text-indigo-600" />
-                Today's Activity
+                Today&apos;s Activity
               </CardTitle>
             </CardHeader>
             <CardContent>

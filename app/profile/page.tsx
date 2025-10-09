@@ -208,7 +208,7 @@ export default function SettingsPage() {
                 Log Out
               </Button>
               <p className="text-xs text-gray-500 mt-2 text-center">
-                You'll be redirected to the login page
+                You&apos;ll be redirected to the login page
               </p>
             </CardContent>
           </Card>

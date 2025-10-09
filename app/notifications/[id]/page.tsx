@@ -123,7 +123,7 @@ export default function NotificationDetailPage() {
               <CardContent className="p-8 text-center">
                 <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">Notification Not Found</h3>
-                <p className="text-gray-500 mb-4">The notification you're looking for doesn't exist or you don't have permission to view it.</p>
+                <p className="text-gray-500 mb-4">The notification you&apos;re looking for doesn&apos;t exist or you don&apos;t have permission to view it.</p>
                 <Link href="/notifications">
                   <Button>Back to Notifications</Button>
                 </Link>

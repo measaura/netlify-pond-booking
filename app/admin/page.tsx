@@ -233,7 +233,7 @@ export default function AdminPage() {
             {/* Today's Summary */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Today's Summary</CardTitle>
+                <CardTitle className="text-lg">Today&apos;s Summary</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
