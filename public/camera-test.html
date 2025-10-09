@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Scanner Demo Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        video { width: 100%; max-width: 300px; height: 200px; background: #000; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .info { font-size: 12px; color: #666; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h2>🎯 QR Scanner Demo Test</h2>
+    
+    <div id="status-container"></div>
+    
+    <div>
+        <h4>Camera Test:</h4>
+        <video id="video" autoplay muted playsinline></video>
+        <br>
+        <button onclick="testCamera()">Test Camera</button>
+        <button onclick="stopCamera()">Stop Camera</button>
+    </div>
+    
+    <div class="info">
+        <p><strong>Browser:</strong> <span id="browser-info"></span></p>
+        <p><strong>Platform:</strong> <span id="platform-info"></span></p>
+        <p><strong>Camera Support:</strong> <span id="camera-support"></span></p>
+    </div>
+
+    <script type="module">
+        // Display browser info
+        document.getElementById('browser-info').textContent = navigator.userAgent.split(' ').slice(-2).join(' ');
+        document.getElementById('platform-info').textContent = navigator.platform;
+        
+        // Check camera support
+        const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        const hasGetUserMedia = !!(navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
+        
+        const cameraSupport = hasMediaDevices ? 'Modern API ✅' : hasGetUserMedia ? 'Legacy API ⚠️' : 'Not Supported ❌';
+        document.getElementById('camera-support').textContent = cameraSupport;
+        
+        let currentStream = null;
+        
+        // Test camera function with better fallback support
+        window.testCamera = async () => {
+            const statusContainer = document.getElementById('status-container');
+            const video = document.getElementById('video');
+            
+            try {
+                statusContainer.innerHTML = '<div class="warning">🔍 Requesting camera access...</div>';
+                
+                // Try modern API first
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    console.log('Using modern MediaDevices API');
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        } 
+                    });
+                    
+                    video.srcObject = stream;
+                    currentStream = stream;
+                    statusContainer.innerHTML = '<div class="success">✅ Camera working! Perfect for QR demo.</div>';
+                    
+                } else {
+                    // Try legacy API
+                    console.log('Trying legacy getUserMedia API');
+                    const getUserMedia = navigator.getUserMedia || 
+                                      navigator.webkitGetUserMedia || 
+                                      navigator.mozGetUserMedia || 
+                                      navigator.msGetUserMedia;
+                    
+                    if (getUserMedia) {
+                        getUserMedia.call(navigator, 
+                            { video: { facingMode: 'environment' } },
+                            (stream) => {
+                                video.srcObject = stream;
+                                currentStream = stream;
+                                statusContainer.innerHTML = '<div class="success">✅ Camera working (legacy API)! QR demo should work.</div>';
+                            },
+                            (error) => {
+                                throw error;
+                            }
+                        );
+                    } else {
+                        throw new Error('Camera API not supported on this browser/device');
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Camera error:', error);
+                let errorMsg = '❌ Camera Error: ' + (error.name || 'Unknown') + ' - ' + (error.message || error);
+                let recommendations = '';
+                
+                if (error.name === 'NotAllowedError') {
+                    recommendations = '<br><strong>Fix:</strong> Allow camera permissions in browser settings';
+                } else if (error.name === 'NotFoundError') {
+                    recommendations = '<br><strong>Fix:</strong> No camera found - try different device';
+                } else if (error.name === 'NotSupportedError' || error.message.includes('not supported')) {
+                    recommendations = '<br><strong>Recommendations for demo:</strong><br>' +
+                                    '• Try <strong>Chrome on Android phone</strong><br>' +
+                                    '• Try <strong>Firefox on desktop</strong><br>' +
+                                    '• Avoid Safari on iPad<br>' +
+                                    '• Use Manual QR Entry as fallback';
+                } else if (error.message.includes('undefined') || error.message.includes('mediaDevices')) {
+                    recommendations = '<br><strong>Browser Issue:</strong><br>' +
+                                    '• This browser/device doesn\'t support camera API<br>' +
+                                    '• <strong>Try Chrome on Android</strong> for best results<br>' +
+                                    '• Use Manual QR Entry for demo instead';
+                }
+                
+                statusContainer.innerHTML = '<div class="error">' + errorMsg + recommendations + '</div>';
+                
+                // Show fallback message
+                setTimeout(() => {
+                    statusContainer.innerHTML += '<div class="warning" style="margin-top:10px;">💡 <strong>Demo Fallback:</strong> Use Manual QR Entry in the scanner page - works just as well!</div>';
+                }, 2000);
+            }
+        };
+        
+        // Stop camera function  
+        window.stopCamera = () => {
+            const video = document.getElementById('video');
+            const statusContainer = document.getElementById('status-container');
+            
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+                video.srcObject = null;
+                statusContainer.innerHTML = '<div class="status">📷 Camera stopped</div>';
+            }
+        };
+        
+        // Auto-test camera on page load for supported browsers
+        if (hasMediaDevices && (navigator.userAgent.includes('Chrome') || navigator.userAgent.includes('Firefox'))) {
+            setTimeout(() => {
+                document.getElementById('status-container').innerHTML = '<div class="warning">🚀 Auto-testing camera (good browser detected)...</div>';
+                setTimeout(testCamera, 1000);
+            }, 500);
+        }
+    </script>
+    
+    <div class="info">
+        <h4>📋 Demo Recommendations:</h4>
+        <ul style="font-size: 12px; color: #666;">
+            <li>✅ <strong>Best:</strong> Chrome on Android phone</li>
+            <li>✅ <strong>Good:</strong> Firefox on Android</li>
+            <li>⚠️ <strong>OK:</strong> Safari on iPhone</li>
+            <li>❌ <strong>Avoid:</strong> iPad Safari, Chrome on iOS</li>
+        </ul>
+        
+        <p style="font-size: 12px; margin-top: 15px;">
+            <strong>Next:</strong> If camera works here, it will work in the QR scanner!<br>
+            <strong>Demo URL:</strong> <code>http://192.168.0.106:3001/scanner</code>
+        </p>
+    </div>
+</body>
+</html>

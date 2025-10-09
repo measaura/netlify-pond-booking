@@ -1,0 +1,39 @@
+/* Same.new CSS fix for immediate loading */
+@import url('data:text/css,html{background:white!important}body{margin:0!important;padding:0!important;font-family:system-ui,sans-serif!important}');
+
+/* Force Tailwind base styles */
+*,::before,::after{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}
+html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4}
+body{margin:0;line-height:inherit}
+
+/* Key utility classes for immediate loading */
+.bg-gradient-to-br{background-image:linear-gradient(to bottom right,var(--tw-gradient-stops))}
+.from-blue-50{--tw-gradient-from:#eff6ff;--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to,rgba(239,246,255,0))}
+.to-green-50{--tw-gradient-to:#f0fdf4}
+.min-h-screen{min-height:100vh}
+.bg-white{background-color:#fff}
+.shadow-sm{box-shadow:0 1px 2px 0 rgba(0,0,0,0.05)}
+.border-b{border-bottom-width:1px}
+.max-w-md{max-width:28rem}
+.mx-auto{margin-left:auto;margin-right:auto}
+.px-4{padding-left:1rem;padding-right:1rem}
+.py-4{padding-top:1rem;padding-bottom:1rem}
+.flex{display:flex}
+.items-center{align-items:center}
+.justify-between{justify-content:space-between}
+.gap-2{gap:0.5rem}
+.gap-4{gap:1rem}
+.text-xl{font-size:1.25rem;line-height:1.75rem}
+.font-bold{font-weight:700}
+.text-gray-900{color:#111827}
+.text-xs{font-size:0.75rem;line-height:1rem}
+.text-gray-500{color:#6b7280}
+.p-4{padding:1rem}
+.space-y-4>*+*{margin-top:1rem}
+.w-full{width:100%}
+.grid{display:grid}
+.grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.text-center{text-align:center}
+.text-2xl{font-size:1.5rem;line-height:2rem}
+.text-gray-600{color:#4b5563}
+.antialiased{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}

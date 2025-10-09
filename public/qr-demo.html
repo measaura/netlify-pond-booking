@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QR Test Code for Demo</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background: white;
+        }
+        .qr-container { 
+            display: inline-block; 
+            padding: 20px; 
+            border: 3px solid #000; 
+            background: white; 
+            margin: 20px;
+        }
+        #qr { 
+            display: block; 
+            margin: 0 auto; 
+        }
+        .instructions {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: left;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <h1>🎯 QR Scanner Demo Test</h1>
+    
+    <div class="qr-container">
+        <div id="qr"></div>
+        <p><strong>Demo QR Code</strong><br>Hold this up to your MacBook camera</p>
+    </div>
+    
+    <div class="instructions">
+        <h3>📋 Demo Instructions:</h3>
+        <ol>
+            <li><strong>Open scanner on MacBook:</strong> <code>http://localhost:3001/scanner</code></li>
+            <li><strong>Login as manager:</strong> <code>manager1@fishing.com / password123</code></li>
+            <li><strong>Click "Test Video"</strong> first to make sure video displays</li>
+            <li><strong>Click "Start Scanner"</strong> to begin QR scanning</li>
+            <li><strong>Hold this printed QR code</strong> or phone with this page up to your MacBook camera</li>
+            <li><strong>Scanner should detect automatically</strong> and show booking details</li>
+            <li><strong>Complete check-in process</strong> to finish demo</li>
+        </ol>
+        
+        <h4>🔧 If Video Doesn't Show:</h4>
+        <ul>
+            <li>Check browser console for error messages</li>
+            <li>Try refreshing the scanner page</li>
+            <li>Use Manual QR Entry with the JSON data below</li>
+        </ul>
+        
+        <h4>📱 Manual Entry Data (copy if needed):</h4>
+        <code style="background: #ddd; padding: 5px; display: block; margin: 5px 0; font-size: 12px;">
+            {"bookingId":"DEMO-2025-001","pond":"Rainbow Lake","seats":["A1","A2"],"date":"2025-09-14","timeSlot":"09:00 - 11:00"}
+        </code>
+    </div>
+
+    <script>
+        // Generate QR code with demo booking data
+        const qrData = JSON.stringify({
+            "bookingId": "DEMO-2025-001",
+            "pond": "Rainbow Lake", 
+            "seats": ["A1", "A2"],
+            "date": "2025-09-14",
+            "timeSlot": "09:00 - 11:00"
+        });
+        
+        new QRCode(document.getElementById("qr"), {
+            text: qrData,
+            width: 200,
+            height: 200,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+        });
+        
+        console.log("QR Data generated:", qrData);
+    </script>
+</body>
+</html>
