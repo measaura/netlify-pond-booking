@@ -19,19 +19,19 @@ export default function DatabaseUtilsPage() {
     setIsClient(true)
   }, [])
 
-  // Load statistics when client-side
-  useEffect(() => {
-    if (isClient) {
-      loadStats()
-    }
-  }, [isClient])
-
   const loadStats = async () => {
     const { getCheckInStats, getAllBookings, getTodayCheckIns } = await import('@/lib/localStorage')
     setStats(getCheckInStats())
     setBookings(getAllBookings())
     setCheckIns(getTodayCheckIns())
   }
+
+  // Load statistics when client-side
+  useEffect(() => {
+    if (isClient) {
+      loadStats()
+    }
+  }, [isClient])
 
   const showMessage = (msg: string) => {
     setMessage(msg)
