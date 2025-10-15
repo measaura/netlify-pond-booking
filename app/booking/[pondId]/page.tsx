@@ -8,25 +8,16 @@ import { SimpleCalendar } from "@/components/ui/simple-calendar"
 import { ArrowLeft, Clock, Users, DollarSign, Fish, MapPin, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { 
-  saveBookingWithAvailabilityUpdate, 
-  getBookedSeats, 
-  getPondById, 
-  getTimeSlots, 
-  getTimeSlotAvailability,
-  getTimeSlotAvailableSeats,
-  getCurrentBooking
-} from "@/lib/localStorage"
 import type { Pond, TimeSlot } from '@/types'
 import { useAuth } from '@/lib/auth'
+import { useToastSafe } from '@/components/ui/toast'
 
 // Generate seats based on pond shape and seating arrangement
-const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number) => {
+const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occupiedSeatIds?: number[]) => {
   if (!pond) return []
 
   // Get already booked seats for this pond, date, and time slot
-  const bookedSeatIds = selectedDate && timeSlotId ? 
-    getBookedSeats(pond.id, selectedDate.toISOString(), 'pond', timeSlotId) : []
+  const bookedSeatIds = occupiedSeatIds ?? []
 
   const seats = []
   let seatId = 1
@@ -143,39 +134,80 @@ export default function BookingPage() {
   // Dynamic state for database data
   const [pond, setPond] = useState<Pond | null>(null)
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([])
+  const [occupiedMap, setOccupiedMap] = useState<Record<number, number[]>>({})
   const [selectedSeats, setSelectedSeats] = useState<number[]>([])
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<number | null>(null)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [seats, setSeats] = useState<any[]>([])
   const [step, setStep] = useState<'date' | 'time' | 'seats' | 'payment'>('date')
+  const toast = useToastSafe()
 
-  // Generate seats only when we have date and time slot
+  // Generate seats only when we have date and time slot and occupied info
   useEffect(() => {
     if (selectedDate && selectedTimeSlot && pond) {
-      const newSeats = generateSeats(pond, selectedDate, selectedTimeSlot)
+      const occupied = occupiedMap[selectedTimeSlot] ?? []
+      const newSeats = generateSeats(pond, selectedDate, selectedTimeSlot, occupied)
       setSeats(newSeats)
       setSelectedSeats([]) // Clear selected seats when date/time changes
     }
-  }, [selectedDate, selectedTimeSlot, pondId])
+  }, [selectedDate, selectedTimeSlot, pond, occupiedMap])
 
   // Load pond and timeSlots data on component mount
   useEffect(() => {
-    const loadData = () => {
-      const pondData = getPondById(pondId)
-      const timeSlotsData = getTimeSlots()
-      
-      setPond(pondData)
-      setTimeSlots(timeSlotsData)
+    const loadData = async () => {
+      try {
+        const pondsRes = await fetch('/api/ponds')
+        const pondsJson = await pondsRes.json()
+        const pondData = pondsJson.find((p: any) => p.id === pondId) ?? null
+
+        const slotsRes = await fetch('/api/timeSlots')
+        const slotsJson = await slotsRes.json()
+
+        setPond(pondData)
+        setTimeSlots(slotsJson || [])
+      } catch (err) {
+        console.error('Failed to load ponds/timeSlots', err)
+      }
     }
-    
+
     loadData()
   }, [pondId])
 
   // Check availability for each time slot based on selected date
   const checkTimeSlotAvailability = (timeSlotId: number) => {
     if (!selectedDate || !pond) return true
-    return getTimeSlotAvailability(pond.id, timeSlotId, selectedDate.toISOString())
+    const occupied = occupiedMap[timeSlotId] ?? []
+    return (pond.capacity - occupied.length) > 0
   }
+
+  // When selectedDate changes (or pond/timeSlots loaded), fetch occupied seats per timeslot
+  useEffect(() => {
+    if (!selectedDate || !pond || timeSlots.length === 0) return
+
+    let cancelled = false
+
+    const fetchOccupied = async () => {
+      try {
+        const results = await Promise.all(timeSlots.map(async (slot) => {
+          const res = await fetch(`/api/bookings/occupied?pondId=${pond.id}&date=${encodeURIComponent(selectedDate.toISOString())}&timeSlotId=${slot.id}`)
+          if (!res.ok) return { id: slot.id, occupied: [] }
+          const json = await res.json()
+          // expect json to be array of seat numbers
+          return { id: slot.id, occupied: Array.isArray(json) ? json : json.occupied || [] }
+        }))
+
+        if (cancelled) return
+        const map: Record<number, number[]> = {}
+        results.forEach(r => { map[r.id] = r.occupied })
+        setOccupiedMap(map)
+      } catch (err) {
+        console.error('Failed to fetch occupied seats', err)
+      }
+    }
+
+    fetchOccupied()
+    return () => { cancelled = true }
+  }, [selectedDate, pond, timeSlots])
 
   if (!pond) {
     return <div>Pond not found</div>
@@ -211,30 +243,30 @@ export default function BookingPage() {
     }
   }
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     if (selectedSeats.length === 0 || !selectedTimeSlot || !selectedDate) {
-      alert('Please complete all selections')
+      toast ? toast.push({ message: 'Please complete all selections', variant: 'error' }) : window.alert('Please complete all selections')
       return
     }
 
     if (!pond) {
       console.error('Pond not found! PondId:', pondId)
-      alert('Error: Pond not found')
+      toast ? toast.push({ message: 'Error: Pond not found', variant: 'error' }) : window.alert('Error: Pond not found')
       return
     }
 
     if (!user) {
       console.error('User not authenticated!')
-      alert('Please log in to make a booking')
+      toast ? toast.push({ message: 'Please log in to make a booking', variant: 'error' }) : window.alert('Please log in to make a booking')
       router.push('/login')
       return
     }
 
-    // Get the selected time slot
-    const selectedTimeSlotData = timeSlots.find(t => t.id === selectedTimeSlot)
+  // Get the selected time slot
+  const selectedTimeSlotData = timeSlots.find(t => t.id === selectedTimeSlot)
     if (!selectedTimeSlotData) {
       console.error('Time slot not found! Selected ID:', selectedTimeSlot, 'Available slots:', timeSlots)
-      alert('Error: Time slot not found')
+      toast ? toast.push({ message: 'Error: Time slot not found', variant: 'error' }) : window.alert('Error: Time slot not found')
       return
     }
 
@@ -250,49 +282,49 @@ export default function BookingPage() {
 
     if (selectedSeatsData.length === 0) {
       console.error('Seats not found! Selected IDs:', selectedSeats, 'Available seats:', seats)
-      alert('Error: Seats not found')
+      toast ? toast.push({ message: 'Error: Seats not found', variant: 'error' }) : window.alert('Error: Seats not found')
       return
     }
 
-    // Store booking data with proper validation
-    const bookingData = {
-      bookingId: `FG${Date.now()}`,
-      type: 'pond' as const,
-      pond: {
-        id: pond.id,
-        name: pond.name,
-        image: pond.image
-      },
-      seats: selectedSeatsData,
-      timeSlot: {
-        id: selectedTimeSlotData.id,
-        time: selectedTimeSlotData.time,
-        label: selectedTimeSlotData.label
-      },
+    // Construct payload expected by server
+    const payload = {
+      type: 'pond',
+      pondId: pond.id,
+      pondName: pond.name,
+      seats: selectedSeatsData.map(s => ({ number: s.number, row: s.row })),
+      timeSlotId: selectedTimeSlotData.id,
       date: selectedDate.toISOString(),
       totalPrice: selectedSeats.length * pond.price,
-      // Add user information
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email
+      bookedByUserId: user.id
     }
 
-    console.log('=== BOOKING SAVE DEBUG ===')
-    console.log('Pond booking data being saved:', bookingData)
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
 
-    // Save using the enhanced database system that updates availability
-    saveBookingWithAvailabilityUpdate(bookingData)
-    
-    // Debug: Check if booking was saved correctly
-    setTimeout(() => {
-      const savedBooking = getCurrentBooking()
-      console.log('Saved booking retrieved:', savedBooking)
-      console.log('Booking seats in saved data:', savedBooking?.seats)
-      console.log('=== END BOOKING SAVE DEBUG ===')
-    }, 100)
-    
-    // Navigate to ticket page with booking ID
-    router.push(`/ticket?booking=${bookingData.bookingId}`)
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error('Booking API error:', errText)
+        toast ? toast.push({ message: 'Failed to create booking', variant: 'error' }) : window.alert('Failed to create booking')
+        return
+      }
+
+      const json = await res.json()
+      const bookingId = json.bookingId || json.id || json.booking?.id
+      if (!bookingId) {
+        console.error('No bookingId returned from server', json)
+        toast ? toast.push({ message: 'Booking created but no id returned', variant: 'error' }) : window.alert('Booking created but no id returned')
+        return
+      }
+
+      router.push(`/ticket?booking=${bookingId}`)
+    } catch (err) {
+      console.error('Failed to save booking', err)
+      toast ? toast.push({ message: 'Failed to save booking', variant: 'error' }) : window.alert('Failed to save booking')
+    }
   }
 
   const totalPrice = selectedSeats.length * pond.price
@@ -388,13 +420,8 @@ export default function BookingPage() {
               <CardContent className="space-y-3">
                 {timeSlots.map((slot) => {
                   const isAvailable = checkTimeSlotAvailability(slot.id)
-                  const availableSeatsResult = selectedDate ? 
-                    getTimeSlotAvailableSeats(pond.id, slot.id, selectedDate.toISOString()) : 
-                    pond.capacity
-                  
-                  const availableSeats = typeof availableSeatsResult === 'number' 
-                    ? availableSeatsResult 
-                    : availableSeatsResult.available
+                  const occupied = selectedDate ? (occupiedMap[slot.id] ?? []) : []
+                  const availableSeats = Math.max(0, pond.capacity - occupied.length)
 
                   return (
                     <div

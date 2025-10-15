@@ -8,61 +8,79 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Download, Share2, MapPin, Clock, Users, QrCode as QrCodeIcon } from "lucide-react"
 import Link from "next/link"
 import QRCode from 'qrcode'
-import { getCurrentBooking, getBookingById, getAllBookings, } from "@/lib/localStorage"
+// booking data is fetched from server
 import type { BookingData as DatabaseBookingData } from "@/types"
 import { BottomNavigation } from '@/components/BottomNavigation'
+import { useToastSafe } from '@/components/ui/toast'
 
 function TicketContent() {
   const [bookingData, setBookingData] = useState<DatabaseBookingData | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
+  const toast = useToastSafe()
   const searchParams = useSearchParams()
   
   // Check if we're coming from bookings page (showing specific booking)
-  const bookingId = searchParams.get('bookingId')
+  const bookingId = searchParams.get('bookingId') || searchParams.get('booking')
   const source = searchParams.get('source')
   const isFromBookings = source === 'bookings' && !!bookingId
   
   useEffect(() => {
-    // Get booking ID from URL params - check both 'bookingId' (from bookings page) and 'booking' (legacy)
-    const bookingIdFromUrl = searchParams.get('bookingId') || searchParams.get('booking')
-    
-    let currentBooking: DatabaseBookingData | null = null
-    
-    // If a specific booking ID is provided, get that booking
-    if (bookingIdFromUrl) {
-      currentBooking = getBookingById(bookingIdFromUrl)
-    } else {
-      // Otherwise get the current booking
-      currentBooking = getCurrentBooking()
-    }
-    
-    if (currentBooking) {
-      setBookingData(currentBooking)
+    const run = async () => {
+      const bookingIdFromUrl = bookingId
 
-      // Generate QR code with the booking data
-      if (currentBooking.pond && currentBooking.pond.name && currentBooking.seats && currentBooking.timeSlot) {
-        const qrData = JSON.stringify({
-          bookingId: currentBooking.bookingId,
-          pond: currentBooking.pond.name,
-          seats: currentBooking.seats.map(s => s.number.toString()),
-          date: currentBooking.date,
-          timeSlot: currentBooking.timeSlot.time
-        })
+      let currentBooking: DatabaseBookingData | null = null
+      if (bookingIdFromUrl) {
+        try {
+          const res = await fetch(`/api/bookings?bookingId=${encodeURIComponent(bookingIdFromUrl)}`)
+          const json = await res.json()
+          if (json && json.ok && json.data) currentBooking = json.data
+        } catch (err) {
+          console.error('Failed to fetch booking by id', err)
+        }
+      }
 
-        QRCode.toDataURL(qrData, {
-          width: 256,
-          margin: 2,
-          color: {
-            dark: '#1f2937',
-            light: '#ffffff'
+      if (!currentBooking) {
+        try {
+          const res = await fetch('/api/bookings?userId=1') // temporary: fallback to user 1
+          const json = await res.json()
+          if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
+            currentBooking = json.data[0]
           }
-        }).then(url => {
-          setQrCodeUrl(url)
-        }).catch(error => {
-          console.error('Error generating QR code:', error)
-        })
+        } catch (err) {
+          console.error('Failed to fetch recent bookings', err)
+        }
+      }
+
+      if (currentBooking) {
+        setBookingData(currentBooking)
+
+        // Generate QR code with the booking data
+        if (currentBooking.pond && currentBooking.pond.name && currentBooking.seats && currentBooking.timeSlot) {
+          const qrData = JSON.stringify({
+            bookingId: currentBooking.bookingId,
+            pond: currentBooking.pond.name,
+            seats: currentBooking.seats.map(s => s.number.toString()),
+            date: currentBooking.date,
+            timeSlot: currentBooking.timeSlot.time
+          })
+
+          QRCode.toDataURL(qrData, {
+            width: 256,
+            margin: 2,
+            color: {
+              dark: '#1f2937',
+              light: '#ffffff'
+            }
+          }).then(url => {
+            setQrCodeUrl(url)
+          }).catch(error => {
+            console.error('Error generating QR code:', error)
+          })
+        }
       }
     }
+
+    run()
   }, [searchParams])
 
   // Download function
@@ -220,8 +238,7 @@ function TicketContent() {
 
   const handleShare = async () => {
     if (!bookingData || !bookingData.pond) {
-      alert('Booking data is incomplete')
-      return
+      return toast ? toast.push({ message: 'Booking data is incomplete', variant: 'error' }) : window.alert('Booking data is incomplete')
     }
 
     if (navigator.share) {
@@ -237,7 +254,7 @@ function TicketContent() {
     } else {
       // Fallback: copy to clipboard
       navigator.clipboard.writeText(window.location.href)
-      alert('Link copied to clipboard!')
+      toast ? toast.push({ message: 'Link copied to clipboard!', variant: 'success' }) : window.alert('Link copied to clipboard!')
     }
   }
 

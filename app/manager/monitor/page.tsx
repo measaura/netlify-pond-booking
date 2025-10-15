@@ -10,24 +10,34 @@ import { useRouter } from "next/navigation"
 import { AuthGuard } from "@/components/AuthGuard"
 import { ManagerNavigation } from '@/components/ManagerNavigation'
 import { 
-  getPonds,
-  getAllBookings,
-  getEvents
-} from "@/lib/localStorage"
+  fetchPonds,
+  fetchAllBookings,
+  fetchEvents
+} from "../../../lib/client-fetches"
 import type { BookingData } from '@/types'
 
 export default function ManagerStatusPage() {
   const router = useRouter()
   const [bookings, setBookings] = useState<BookingData[]>([])
-  const [ponds, setPonds] = useState(getPonds())
-  const [events, setEvents] = useState(getEvents())
+  const [ponds, setPonds] = useState<any[]>([])
+  const [events, setEvents] = useState<any[]>([])
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
-  const refreshData = () => {
-    setBookings(getAllBookings())
-    setPonds(getPonds())
-    setEvents(getEvents())
-    setLastUpdated(new Date())
+  const refreshData = async () => {
+    try {
+      const [pondsRes, bookingsRes, eventsRes] = await Promise.all([
+        fetchPonds(),
+        fetchAllBookings(),
+        fetchEvents()
+      ])
+
+      setPonds(pondsRes ?? [])
+      setBookings(bookingsRes ?? [])
+      setEvents(eventsRes ?? [])
+      setLastUpdated(new Date())
+    } catch (e) {
+      console.error('refreshData error', e)
+    }
   }
 
   useEffect(() => {

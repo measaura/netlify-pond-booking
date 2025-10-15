@@ -8,6 +8,7 @@ import { Shield, Power, RefreshCw, Database, Bell, QrCode, Users, AlertTriangle,
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { useAuth } from '@/lib/auth'
+import { useToastSafe } from '@/components/ui/toast'
 import { 
   getAllBookings,
   getPonds,
@@ -25,6 +26,7 @@ export default function AdminControlPage() {
     lastBackup: null as Date | null
   })
   const [isLoading, setIsLoading] = useState(false)
+  const toast = useToastSafe()
 
   const checkSystemStatus = () => {
     setIsLoading(true)
@@ -67,10 +69,10 @@ export default function AdminControlPage() {
         setIsLoading(true)
         resetDatabase()
         checkSystemStatus()
-        alert('System reset completed successfully.')
+        toast ? toast.push({ message: 'System reset completed successfully.', variant: 'success' }) : window.alert('System reset completed successfully.')
       } catch (error) {
         console.error('Error resetting system:', error)
-        alert('Error during system reset. Please try again.')
+        toast ? toast.push({ message: 'Error during system reset. Please try again.', variant: 'error' }) : window.alert('Error during system reset. Please try again.')
       } finally {
         setIsLoading(false)
       }
@@ -82,10 +84,10 @@ export default function AdminControlPage() {
       setIsLoading(true)
       resetDatabase()
       checkSystemStatus()
-      alert('Database refreshed successfully.')
+      toast ? toast.push({ message: 'Database refreshed successfully.', variant: 'success' }) : window.alert('Database refreshed successfully.')
     } catch (error) {
       console.error('Error refreshing database:', error)
-      alert('Error refreshing database.')
+      toast ? toast.push({ message: 'Error refreshing database.', variant: 'error' }) : window.alert('Error refreshing database.')
     } finally {
       setIsLoading(false)
     }
@@ -93,7 +95,7 @@ export default function AdminControlPage() {
 
   const handleEmergencyShutdown = () => {
     if (confirm('This will disable all booking functions. Are you sure?')) {
-      alert('Emergency shutdown feature would be implemented here.')
+      toast ? toast.push({ message: 'Emergency shutdown feature would be implemented here.', variant: 'info' }) : window.alert('Emergency shutdown feature would be implemented here.')
     }
   }
 
