@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { AuthGuard } from '@/components/AuthGuard'
-import { useAuth } from '@/lib/auth'
+// useAuth already imported above
 import { ManagerNavigation } from '@/components/ManagerNavigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,12 +19,7 @@ import {
   Calendar,
   TrendingUp
 } from 'lucide-react'
-import { 
-  generateOverallLeaderboard,
-  getCatches,
-  getEvents,
-  generateEventLeaderboard,
-} from '@/lib/localStorage'
+import { useAuth } from '@/lib/auth'
 import { LeaderboardEntry, EventLeaderboard } from '@/types'
 
 function LeaderboardCard({ entry, index, showRank = true }: { 
@@ -116,8 +111,8 @@ function LeaderboardCard({ entry, index, showRank = true }: {
 
 function FullLeaderboard() {
   const { user } = useAuth()
-  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [eventLeaderboards, setEventLeaderboards] = useState<EventLeaderboard[]>([])
+  const [overallLeaderboard, setOverallLeaderboard] = useState<any[]>([])
+  const [eventLeaderboards, setEventLeaderboards] = useState<any[]>([])
   const [totalCatches, setTotalCatches] = useState(0)
   const [activeTab, setActiveTab] = useState<'overall' | 'events'>('overall')
   const [lastUpdated, setLastUpdated] = useState(new Date())
@@ -127,19 +122,44 @@ function FullLeaderboard() {
   }, [])
 
   const refreshData = () => {
-    const overall = generateOverallLeaderboard()
-    setOverallLeaderboard(overall)
-    
-    const catches = getCatches()
-    setTotalCatches(catches.length)
-    
-    // Generate leaderboards for open events
-    const events = getEvents()
-    const openEvents = events.filter(event => event.status === 'open')
-    const eventBoards = openEvents.map(event => generateEventLeaderboard(event.id))
-    setEventLeaderboards(eventBoards)
-    
-    setLastUpdated(new Date())
+    ;(async () => {
+      try {
+        const overallRes = await fetch('/api/leaderboard/overall')
+        const overallJson = await overallRes.json()
+        if (overallJson.ok) setOverallLeaderboard(overallJson.data)
+
+        // Try to compute total catches via catches API
+        try {
+          const catchesRes = await fetch('/api/catches')
+          const catchesJson = await catchesRes.json()
+          if (catchesJson.ok) setTotalCatches(catchesJson.data.length)
+        } catch (e) {
+          setTotalCatches(0)
+        }
+
+        // Fetch all events and create event leaderboards for open events
+        const eventsRes = await fetch('/api/events')
+        const eventsJson = await eventsRes.json()
+        if (eventsJson.ok) {
+          const openEvents = eventsJson.data.filter((ev: any) => ev.status === 'open')
+          const boards: any[] = []
+          for (const ev of openEvents) {
+            try {
+              const bRes = await fetch(`/api/leaderboard/event?eventId=${ev.id}`)
+              const bJson = await bRes.json()
+              if (bJson.ok) boards.push(bJson.data)
+            } catch (e) {
+              // ignore per-event errors
+            }
+          }
+          setEventLeaderboards(boards)
+        }
+
+        setLastUpdated(new Date())
+      } catch (err) {
+        console.error('Error refreshing leaderboards', err)
+      }
+    })()
   }
 
   const topThree = overallLeaderboard.slice(0, 3)
@@ -258,7 +278,7 @@ function FullLeaderboard() {
                       <Award className="h-5 w-5 text-yellow-600" />
                       Top Performers
                     </h4>
-                    {topThree.map((entry, index) => (
+                    {topThree.map((entry: any, index: number) => (
                       <LeaderboardCard key={entry.userId} entry={entry} index={index} />
                     ))}
                   </div>
@@ -270,7 +290,7 @@ function FullLeaderboard() {
                     <h4 className="text-md font-semibold text-gray-900 mb-3">
                       All Rankings
                     </h4>
-                    {remainingEntries.map((entry, index) => (
+                    {remainingEntries.map((entry: any, index: number) => (
                       <LeaderboardCard key={entry.userId} entry={entry} index={index + 3} />
                     ))}
                   </div>
@@ -315,7 +335,7 @@ function FullLeaderboard() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {eventBoard.entries.slice(0, 5).map((entry, index) => (
+                          {eventBoard.entries.slice(0, 5).map((entry: any, index: number) => (
                             <LeaderboardCard 
                               key={entry.userId} 
                               entry={entry} 

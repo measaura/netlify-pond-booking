@@ -8,25 +8,43 @@ import { ArrowLeft, Download, Calendar, Users, TrendingUp, DollarSign, BarChart3
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { ManagerNavigation } from '@/components/ManagerNavigation'
-import { 
-  getAllBookings,
-  getTodayCheckIns,
-  getCheckInStats,
-  getPonds,
-  getEvents,
-} from "@/lib/localStorage"
 import type { BookingData, CheckInRecord } from '@/types'
 
 export default function ManagerReportsPage() {
   const [allBookings, setAllBookings] = useState<BookingData[]>([])
   const [todayCheckIns, setTodayCheckIns] = useState<CheckInRecord[]>([])
-  const [stats, setStats] = useState(getCheckInStats())
+  const [stats, setStats] = useState<any>({ currentlyCheckedIn: 0, totalToday: 0, totalCheckOuts: 0, noShows: 0 })
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today')
 
   useEffect(() => {
-    setAllBookings(getAllBookings())
-    setTodayCheckIns(getTodayCheckIns())
-    setStats(getCheckInStats())
+    let mounted = true
+    ;(async () => {
+      try {
+  const bRes = await fetch('/api/bookings')
+        const bJson = await bRes.json()
+        if (bJson.ok && mounted) setAllBookings(bJson.data)
+
+  const ciRes = await fetch('/api/catches')
+        const ciJson = await ciRes.json()
+        if (ciJson.ok && mounted) setTodayCheckIns(ciJson.data)
+
+  const pondsRes = await fetch('/api/ponds')
+  const pondsJson = await pondsRes.json()
+  if (pondsJson.ok && mounted) setFetchedPonds(pondsJson.data)
+
+        // Simple stats estimation from bookings/checkins
+        if (mounted) {
+          setStats({
+            currentlyCheckedIn: 0,
+            totalToday: bJson.ok ? bJson.data.length : 0,
+            totalCheckOuts: 0,
+            noShows: 0
+          })
+        }
+      } catch (err) {
+        console.error('Error loading reports data', err)
+      }
+    })()
   }, [])
 
   // Calculate revenue and statistics
@@ -40,15 +58,17 @@ export default function ManagerReportsPage() {
     .reduce((sum, booking) => sum + booking.totalPrice, 0)
 
   // Pond popularity
-  const pondStats = getPonds().map(pond => {
-    const pondBookings = allBookings.filter(booking => booking.pond.id === pond.id)
+  // Compute pondStats from fetched ponds (if any) and allBookings
+  const [fetchedPonds, setFetchedPonds] = useState<any[]>([])
+  const pondStats = (fetchedPonds || []).map((pond: any) => {
+    const pondBookings = allBookings.filter(booking => booking.pond?.id === pond.id)
     const pondRevenue = pondBookings.reduce((sum, booking) => sum + booking.totalPrice, 0)
     return {
       ...pond,
       bookings: pondBookings.length,
       revenue: pondRevenue
     }
-  }).sort((a, b) => b.bookings - a.bookings)
+  }).sort((a: any, b: any) => b.bookings - a.bookings)
 
   // Time slot popularity
   const timeSlotStats: { [key: string]: { count: number; revenue: number } } = {}

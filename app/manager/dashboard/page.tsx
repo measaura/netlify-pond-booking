@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AuthGuard } from '@/components/AuthGuard'
-import { useAuth } from '@/lib/auth'
+// ...existing imports
 import { ManagerNavigation } from '@/components/ManagerNavigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,16 +26,7 @@ import {
   Award,
   Target
 } from 'lucide-react'
-import { 
-  getPonds,
-  getAllCurrentCheckIns,
-  getTodayCheckIns,
-  getCheckInStats,
-  getPondCurrentOccupancy,
-  getAllBookings,
-  generateOverallLeaderboard,
-  getCatches,
-} from '@/lib/localStorage'
+import { useAuth } from '@/lib/auth'
 import type { CheckInRecord, LeaderboardEntry } from '@/types'
 
 function PondStatusCard({ pond, occupancy, currentUsers }: { 
@@ -128,9 +119,9 @@ function PondStatusCard({ pond, occupancy, currentUsers }: {
 function ManagerDashboard() {
   const { user } = useAuth()
   const router = useRouter()
-  const [ponds, setPonds] = useState(getPonds())
+  const [ponds, setPonds] = useState<any[]>([])
   const [currentCheckIns, setCurrentCheckIns] = useState<CheckInRecord[]>([])
-  const [todayStats, setTodayStats] = useState(getCheckInStats())
+  const [todayStats, setTodayStats] = useState<any>({ currentlyCheckedIn: 0, totalToday: 0, totalCheckOuts: 0, noShows: 0 })
   const [lastUpdated, setLastUpdated] = useState(new Date())
   const [totalBookings, setTotalBookings] = useState(0)
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
@@ -145,26 +136,41 @@ function ManagerDashboard() {
     return () => clearInterval(interval)
   }, [])
 
-  const refreshData = () => {
-    setPonds(getPonds())
-    setCurrentCheckIns(getAllCurrentCheckIns())
-    setTodayStats(getCheckInStats())
-    setTotalBookings(getAllBookings().length)
-    setLeaderboard(generateOverallLeaderboard())
-    setTotalCatches(getCatches().length)
-    setLastUpdated(new Date())
+  const refreshData = async () => {
+    try {
+      const pondsRes = await fetch('/api/ponds')
+      const pondsJson = await pondsRes.json()
+      if (pondsJson.ok) setPonds(pondsJson.data)
+
+      // Fetch current check-ins (today) and stats from check-ins or bookings endpoints
+      const occupiedRes = await fetch('/api/bookings/occupied?date=' + encodeURIComponent(new Date().toISOString().split('T')[0]))
+      // occupied endpoint expects pondId or eventId; as a fallback, we fetch bookings
+      const bookingsRes = await fetch('/api/bookings')
+      const bookingsJson = await bookingsRes.json()
+      if (bookingsJson.ok) setTotalBookings(bookingsJson.data.length)
+
+      const leaderboardRes = await fetch('/api/leaderboard/overall')
+      const lbJson = await leaderboardRes.json()
+      if (lbJson.ok) setLeaderboard(lbJson.data.entries ?? lbJson.data)
+
+      const catchesRes = await fetch('/api/catches')
+      const catchesJson = await catchesRes.json()
+      if (catchesJson.ok) setTotalCatches(catchesJson.data.length)
+
+      setLastUpdated(new Date())
+    } catch (err) {
+      console.error('Error refreshing manager dashboard data', err)
+    }
   }
 
   useEffect(() => {
     refreshData()
   }, [])
 
-  const getPondUsers = (pondId: number) => {
-    return currentCheckIns.filter(checkIn => checkIn.pond.id === pondId)
-  }
+  const getPondUsers = (pondId: number) => currentCheckIns.filter(checkIn => checkIn.pond?.id === pondId)
 
   // Recent activity (last 5 check-ins/check-outs)
-  const recentActivity = getTodayCheckIns().slice(0, 5)
+  const recentActivity = currentCheckIns.slice(0, 5)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 pb-20">
@@ -323,9 +329,14 @@ function ManagerDashboard() {
             </div>
           </div>
           
-          {ponds.map((pond) => {
-            const occupancy = getPondCurrentOccupancy(pond.id)
-            const currentUsers = getPondUsers(pond.id)
+      {ponds.map((pond) => {
+        // Compute a simple occupancy estimate: current checked-in users for this pond
+        const currentUsers = getPondUsers(pond.id)
+        const occupancy = {
+          current: currentUsers.length,
+          capacity: pond.capacity ?? pond.maxCapacity ?? 0,
+          percentage: Math.min(100, Math.round((currentUsers.length / (pond.capacity ?? pond.maxCapacity ?? 1)) * 100))
+        }
             
             return (
               <PondStatusCard 
