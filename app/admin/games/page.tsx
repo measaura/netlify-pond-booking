@@ -10,7 +10,8 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { Game, Prize } from '@/types'
-import { getGames, addGame, updateGame, deleteGame } from '@/lib/localStorage'
+// Client-side will call serverless admin routes under /api/admin
+const API_BASE = '/api/admin/games'
 
 interface GameFormData {
   name: string
@@ -45,8 +46,12 @@ export default function GamesManagementPage() {
   const loadData = () => {
     setIsLoading(true)
     try {
-      const allGames = getGames()
-      setGames(allGames)
+      fetch(API_BASE)
+        .then(res => res.json())
+        .then(json => {
+          if (json.ok) setGames(json.data)
+          else throw new Error(json.error || 'Failed to load games')
+        })
     } catch (error) {
       console.error('Error loading games:', error)
       alert('Error loading games')
@@ -64,15 +69,16 @@ export default function GamesManagementPage() {
     setIsLoading(true)
 
     try {
+      // Create or update via API
       if (editingGame) {
-        const success = updateGame(editingGame.id, formData)
-        if (success) {
-          alert('Game updated successfully!')
-        } else {
-          throw new Error('Failed to update game')
-        }
+        const res = await fetch(API_BASE, { method: 'PUT', body: JSON.stringify({ id: editingGame.id, ...formData }), headers: { 'Content-Type': 'application/json' } })
+        const json = await res.json()
+        if (!json.ok) throw new Error(json.error || 'Failed to update game')
+        alert('Game updated successfully!')
       } else {
-        addGame(formData)
+        const res = await fetch(API_BASE, { method: 'POST', body: JSON.stringify(formData), headers: { 'Content-Type': 'application/json' } })
+        const json = await res.json()
+        if (!json.ok) throw new Error(json.error || 'Failed to create game')
         alert('Game created successfully!')
       }
 
@@ -173,13 +179,13 @@ export default function GamesManagementPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
+                        onClick={async () => {
                           if (confirm('Are you sure you want to delete this game?')) {
                             try {
-                              const success = deleteGame(game.id)
-                              if (success) {
-                                loadData()
-                              }
+                              const res = await fetch(API_BASE, { method: 'DELETE', body: JSON.stringify({ id: game.id }), headers: { 'Content-Type': 'application/json' } })
+                              const json = await res.json()
+                              if (json.ok) loadData()
+                              else throw new Error(json.error || 'Failed to delete game')
                             } catch (error) {
                               alert(error instanceof Error ? error.message : 'Failed to delete game')
                             }

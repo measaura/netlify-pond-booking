@@ -10,14 +10,27 @@ import { ArrowLeft, Fish, Plus, Edit, Trash2, Power, RefreshCw, Users, DollarSig
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
-import { 
-  getPondsWithStats,
-  addPond,
-  updatePond,
-  deletePond,
-  togglePondBooking,
-  cancelAllPondBookings,
-} from '@/lib/localStorage'
+// server-backed API calls
+async function fetchPonds() {
+  const res = await fetch('/api/admin/ponds')
+  const json = await res.json()
+  return json.ok ? json.data : []
+}
+
+async function createPondApi(data: any) {
+  const res = await fetch('/api/admin/ponds', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
+
+async function updatePondApi(id: number, data: any) {
+  const res = await fetch('/api/admin/ponds', { method: 'PUT', body: JSON.stringify({ id, ...data }), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
+
+async function deletePondApi(id: number) {
+  const res = await fetch('/api/admin/ponds', { method: 'DELETE', body: JSON.stringify({ id }), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
 import { Pond } from '@/types'
 
 interface PondFormData {
@@ -51,8 +64,24 @@ export default function PondsManagementPage() {
   const loadData = () => {
     setIsLoading(true)
     try {
-      const allPonds = getPondsWithStats()
-      setPonds(allPonds)
+      fetchPonds().then((ps: any[]) => {
+        // Normalize server pond shape to client expected fields
+        const normalized = ps.map(p => ({
+          id: p.id,
+          name: p.name,
+          maxCapacity: p.maxCapacity ?? 0,
+          capacity: p.maxCapacity ?? 0,
+          price: p.price ?? 0,
+          image: p.image ?? '🌊',
+          bookingEnabled: p.bookingEnabled ?? true,
+          shape: (p.shape || 'RECTANGLE').toLowerCase(),
+          seatingArrangement: p.seatingArrangement || [5,5,5,5],
+          totalBookings: (p.bookings || []).length,
+          currentOccupancy: 0,
+          revenue: 0,
+        }))
+        setPonds(normalized)
+      })
     } catch (error) {
       console.error('Error loading ponds:', error)
     } finally {
@@ -125,15 +154,27 @@ export default function PondsManagementPage() {
     
     try {
       if (editingPond) {
-        const success = updatePond(editingPond.id, pondFormData)
-        if (success) {
-          alert('Pond updated successfully!')
-        } else {
-          alert('Failed to update pond.')
-        }
+        const resp = await updatePondApi(editingPond.id, {
+          name: pondFormData.name,
+          maxCapacity: pondFormData.capacity,
+          price: pondFormData.price,
+          seatingArrangement: pondFormData.seatingArrangement,
+          shape: pondFormData.shape.toUpperCase(),
+          bookingEnabled: pondFormData.bookingEnabled,
+        })
+        if (resp.ok) alert('Pond updated successfully!')
+        else alert('Failed to update pond: ' + resp.error)
       } else {
-        addPond(pondFormData)
-        alert('Pond created successfully!')
+        const resp = await createPondApi({
+          name: pondFormData.name,
+          maxCapacity: pondFormData.capacity,
+          price: pondFormData.price,
+          seatingArrangement: pondFormData.seatingArrangement,
+          shape: pondFormData.shape.toUpperCase(),
+          bookingEnabled: pondFormData.bookingEnabled,
+        })
+        if (resp.ok) alert('Pond created successfully!')
+        else alert('Failed to create pond: ' + resp.error)
       }
       
       setIsPondDialogOpen(false)
@@ -152,8 +193,8 @@ export default function PondsManagementPage() {
     if (confirm(`Are you sure you want to delete "${pondName}"? This action cannot be undone.`)) {
       setIsLoading(true)
       try {
-        const result = deletePond(pondId)
-        if (result.success) {
+        const result = await deletePondApi(pondId)
+        if (result.ok) {
           alert('Pond deleted successfully!')
           loadData()
         } else {
@@ -171,12 +212,12 @@ export default function PondsManagementPage() {
   const handleTogglePondBooking = async (pondId: number) => {
     setIsLoading(true)
     try {
-      const success = togglePondBooking(pondId)
-      if (success) {
-        loadData()
-      } else {
-        alert('Failed to toggle pond booking status.')
-      }
+      // Toggle via PUT
+      const pond = ponds.find(p => p.id === pondId)
+      if (!pond) throw new Error('Pond not found')
+      const resp = await updatePondApi(pondId, { bookingEnabled: !pond.bookingEnabled })
+      if (resp.ok) loadData()
+      else alert('Failed to toggle pond booking status: ' + resp.error)
     } catch (error) {
       console.error('Error toggling pond booking:', error)
       alert('Error updating pond status. Please try again.')
@@ -189,9 +230,7 @@ export default function PondsManagementPage() {
     if (confirm(`Are you sure you want to cancel ALL bookings for "${pondName}"? This action cannot be undone and will affect all users with bookings.`)) {
       setIsLoading(true)
       try {
-        const canceledCount = cancelAllPondBookings(pondId)
-        alert(`Successfully canceled ${canceledCount} bookings for "${pondName}".`)
-        loadData()
+        alert('Cancel all bookings is not implemented on server yet.')
       } catch (error) {
         console.error('Error canceling bookings:', error)
         alert('Error canceling bookings. Please try again.')
@@ -220,7 +259,7 @@ export default function PondsManagementPage() {
       setEditingPond(pond)
       setPondFormData({
         name: pond.name,
-        capacity: pond.capacity,
+        capacity: (pond as any).maxCapacity ?? (pond as any).capacity ?? 20,
         price: pond.price,
         image: pond.image,
         bookingEnabled: pond.bookingEnabled,
@@ -277,7 +316,7 @@ export default function PondsManagementPage() {
 
   const totalRevenue = ponds.reduce((sum, pond) => sum + pond.revenue, 0)
   const totalBookings = ponds.reduce((sum, pond) => sum + pond.totalBookings, 0)
-  const totalCapacity = ponds.reduce((sum, pond) => sum + pond.capacity, 0)
+   const totalCapacity = ponds.reduce((sum, pond) => sum + ((pond as any).maxCapacity ?? 0), 0)
   const currentOccupancy = ponds.reduce((sum, pond) => sum + pond.currentOccupancy, 0)
 
   return (
@@ -421,9 +460,10 @@ export default function PondsManagementPage() {
                     {/* Details Grid - Original simple format */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <div className="text-sm text-gray-600">Capacity: <span className="font-semibold">{pond.capacity}</span></div>
+                        <div className="text-sm text-gray-600">Capacity: <span className="font-semibold">{(pond as any).maxCapacity}</span></div>
                         <div className="text-sm text-gray-600">Price: <span className="font-semibold">${pond.price}</span></div>
-                        <div className="text-sm text-gray-600">Available: <span className="font-semibold">{pond.capacity - pond.currentOccupancy}</span></div>
+                        <div className="text-sm text-gray-600">Available: <span className="font-semibold">{((pond as any).maxCapacity ?? 0) - pond.currentOccupancy}</span></div>
+                         <div className="text-sm text-gray-600">Max Capacity: <span className="font-semibold">{pond.maxCapacity}</span></div>
                       </div>
                       <div className="text-right">
                         <div className="text-sm text-gray-600">Total Bookings: <span className="font-semibold">{pond.totalBookings}</span></div>

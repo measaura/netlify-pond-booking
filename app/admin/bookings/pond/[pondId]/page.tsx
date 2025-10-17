@@ -9,7 +9,7 @@ import { ArrowLeft, Fish, Users, Calendar, DollarSign, Clock, MapPin, Trash2, Re
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { useAuth } from '@/lib/auth'
-import { getAllBookings, getPondById, deleteBooking } from '@/lib/localStorage'
+import { } from '@/lib/localStorage'
 import type { Pond, BookingData } from '@/types'
 
 export default function AdminPondBookingsPage() {
@@ -22,15 +22,17 @@ export default function AdminPondBookingsPage() {
   
   const pondId = parseInt(params.pondId as string)
 
-  const loadData = () => {
+  const loadData = async () => {
     setIsLoading(true)
     try {
-      const pondData = getPondById(pondId)
-      const allBookings = getAllBookings()
-      const pondBookings = allBookings.filter(booking => 
-        booking.type === 'pond' && booking.pond.id === pondId
-      )
-      
+      const pondsRes = await fetch('/api/ponds')
+      const pondsJson = await pondsRes.json()
+      const pondData = pondsJson.find((p: any) => p.id === pondId) ?? null
+
+      const bookingsRes = await fetch(`/api/bookings?pondId=${pondId}`)
+      const bookingsJson = await bookingsRes.json()
+      const pondBookings = bookingsJson && bookingsJson.ok ? bookingsJson.data : []
+
       setPond(pondData)
       setBookings(pondBookings)
     } catch (error) {
@@ -44,10 +46,15 @@ export default function AdminPondBookingsPage() {
     loadData()
   }, [pondId])
 
-  const handleDeleteBooking = (bookingId: string) => {
-    if (confirm('Are you sure you want to delete this booking?')) {
-      deleteBooking(bookingId)
-      loadData()
+  const handleDeleteBooking = async (bookingId: string) => {
+    if (!confirm('Are you sure you want to delete this booking?')) return
+    try {
+      const res = await fetch(`/api/bookings?bookingId=${encodeURIComponent(bookingId)}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      await loadData()
+    } catch (err) {
+      console.error('Failed to delete booking', err)
+      alert('Failed to delete booking')
     }
   }
 

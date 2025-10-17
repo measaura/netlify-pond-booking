@@ -10,7 +10,7 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { Prize } from '@/types'
-import { getPrizes, addPrize, updatePrize, deletePrize } from '@/lib/localStorage'
+const API_BASE = '/api/admin/prizes'
 
 interface PrizeFormData {
   name: string
@@ -40,8 +40,12 @@ export default function PrizesManagementPage() {
   const loadData = () => {
     setIsLoading(true)
     try {
-      const allPrizes = getPrizes()
-      setPrizes(allPrizes)
+      fetch(API_BASE)
+        .then(res => res.json())
+        .then(json => {
+          if (json.ok) setPrizes(json.data)
+          else throw new Error(json.error || 'Failed to load prizes')
+        })
     } catch (error) {
       console.error('Error loading prizes:', error)
     } finally {
@@ -70,27 +74,28 @@ export default function PrizesManagementPage() {
 
     try {
       if (editingPrize) {
-        // Update existing prize
         try {
-          const updatedPrize = updatePrize(editingPrize.id, formData)
-          if (updatedPrize) {
+          const res = await fetch(API_BASE, { method: 'PUT', body: JSON.stringify({ id: editingPrize.id, ...formData }), headers: { 'Content-Type': 'application/json' } })
+          const json = await res.json()
+          if (json.ok) {
             loadData()
             setIsDialogOpen(false)
             setEditingPrize(null)
             resetForm()
-          }
+          } else throw new Error(json.error || 'Failed to update prize')
         } catch (error) {
           alert(error instanceof Error ? error.message : 'Failed to update prize')
         }
       } else {
         // Add new prize
         try {
-          const newPrize = addPrize(formData)
-          if (newPrize) {
+          const res = await fetch(API_BASE, { method: 'POST', body: JSON.stringify(formData), headers: { 'Content-Type': 'application/json' } })
+          const json = await res.json()
+          if (json.ok) {
             loadData()
             setIsDialogOpen(false)
             resetForm()
-          }
+          } else throw new Error(json.error || 'Failed to add prize')
         } catch (error) {
           alert(error instanceof Error ? error.message : 'Failed to add prize')
         }
@@ -168,15 +173,15 @@ export default function PrizesManagementPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          if (confirm('Are you sure you want to delete this game?')) {
+                        onClick={async () => {
+                          if (confirm('Are you sure you want to delete this prize?')) {
                             try {
-                              const success = deletePrize(prize.id)
-                              if (success) {
-                                loadData()
-                              }
+                              const res = await fetch(API_BASE, { method: 'DELETE', body: JSON.stringify({ id: prize.id }), headers: { 'Content-Type': 'application/json' } })
+                              const json = await res.json()
+                              if (json.ok) loadData()
+                              else throw new Error(json.error || 'Failed to delete prize')
                             } catch (error) {
-                              alert(error instanceof Error ? error.message : 'Failed to delete game')
+                              alert(error instanceof Error ? error.message : 'Failed to delete prize')
                             }
                           }
                         }}

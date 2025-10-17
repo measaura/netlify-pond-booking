@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Database, RefreshCw, Trash2, Download, Upload } from "lucide-react"
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
+// keep database utils client-only; functions are dynamically imported from '@/lib/localStorage'
 
 export default function DatabaseUtilsPage() {
   const [message, setMessage] = useState('')

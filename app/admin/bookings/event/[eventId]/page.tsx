@@ -9,7 +9,7 @@ import { ArrowLeft, Trophy, Users, Calendar, DollarSign, Clock, MapPin, Trash2, 
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { useAuth } from '@/lib/auth'
-import { getAllBookings, getEventById, deleteBooking } from '@/lib/localStorage'
+import { } from '@/lib/localStorage'
 import type { Event, BookingData } from '@/types'
 
 export default function AdminEventBookingsPage() {
@@ -22,15 +22,17 @@ export default function AdminEventBookingsPage() {
   
   const eventId = parseInt(params.eventId as string)
 
-  const loadData = () => {
+  const loadData = async () => {
     setIsLoading(true)
     try {
-      const eventData = getEventById(eventId)
-      const allBookings = getAllBookings()
-      const eventBookings = allBookings.filter(booking => 
-        booking.type === 'event' && booking.event?.id === eventId
-      )
-      
+      const eventsRes = await fetch('/api/events')
+      const eventsJson = await eventsRes.json()
+      const eventData = eventsJson.find((e: any) => e.id === eventId) ?? null
+
+      const bookingsRes = await fetch(`/api/bookings?eventId=${eventId}`)
+      const bookingsJson = await bookingsRes.json()
+      const eventBookings = bookingsJson && bookingsJson.ok ? bookingsJson.data : []
+
       setEvent(eventData)
       setBookings(eventBookings)
     } catch (error) {
@@ -44,10 +46,15 @@ export default function AdminEventBookingsPage() {
     loadData()
   }, [eventId])
 
-  const handleDeleteBooking = (bookingId: string) => {
-    if (confirm('Are you sure you want to delete this booking?')) {
-      deleteBooking(bookingId)
-      loadData()
+  const handleDeleteBooking = async (bookingId: string) => {
+    if (!confirm('Are you sure you want to delete this booking?')) return
+    try {
+      const res = await fetch(`/api/bookings?bookingId=${encodeURIComponent(bookingId)}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      await loadData()
+    } catch (err) {
+      console.error('Failed to delete booking', err)
+      alert('Failed to delete booking')
     }
   }
 

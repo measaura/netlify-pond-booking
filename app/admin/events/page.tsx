@@ -30,17 +30,41 @@ import {
   EventPrize,
   Pond 
 } from '@/types'
-import { 
-  getPonds, 
-  getEventsWithStats,
-  getPondsWithStats,
-  addEvent,
-  updateEvent,
-  deleteEvent,
-  updateEventStatus,
-  cancelAllEventBookings,
-  formatEventTimeRange,
-} from '@/lib/localStorage'
+async function fetchEvents() {
+  const res = await fetch('/api/admin/events')
+  const json = await res.json()
+  return json.ok ? json.data : []
+}
+
+async function fetchPondsAdmin() {
+  const res = await fetch('/api/admin/ponds')
+  const json = await res.json()
+  return json.ok ? json.data : []
+}
+
+async function createEventApi(data: any) {
+  const res = await fetch('/api/admin/events', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
+
+async function updateEventApi(id: number, data: any) {
+  const res = await fetch('/api/admin/events', { method: 'PUT', body: JSON.stringify({ id, ...data }), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
+
+async function deleteEventApi(id: number) {
+  const res = await fetch('/api/admin/events', { method: 'DELETE', body: JSON.stringify({ id }), headers: { 'Content-Type': 'application/json' } })
+  return await res.json()
+}
+
+function formatEventTimeRange(e: any) {
+  try {
+    const date = new Date(e.date || e.startDate)
+    const s = e.startTime || new Date(e.startDate).toTimeString().substr(0,5)
+    const t = e.endTime || new Date(e.endDate).toTimeString().substr(0,5)
+    return `${date.toLocaleDateString()} ${s} - ${t}`
+  } catch (err) { return '' }
+}
 
 interface EventFormData {
   name: string
@@ -114,11 +138,23 @@ export default function EventsManagementPage() {
   const loadData = () => {
     setIsLoading(true)
     try {
-      const allEvents = getEventsWithStats()
-      const allPonds = getPondsWithStats()
-
-      setEvents(allEvents)
-      setPonds(allPonds)
+      fetchEvents().then((evs: any[]) => {
+        setEvents(evs)
+      })
+      fetchPondsAdmin().then((ps: any[]) => {
+        const normalized = ps.map(p => ({
+          id: p.id,
+          name: p.name,
+          capacity: p.maxCapacity ?? p.capacity ?? 0,
+          maxCapacity: p.maxCapacity ?? p.capacity ?? 0,
+          price: p.price ?? 0,
+          image: p.image ?? '🌊',
+          bookingEnabled: p.bookingEnabled ?? true,
+          shape: (p.shape || 'RECTANGLE').toLowerCase(),
+          seatingArrangement: p.seatingArrangement || [5,5,5,5],
+        }))
+        setPonds(normalized)
+      })
     } catch (error) {
       console.error('Error loading events data:', error)
     } finally {
@@ -182,25 +218,22 @@ const handleEventSubmit = async (e: React.FormEvent) => {
   try {
     const finalEventData = {
       ...eventFormData,
-      date: new Date(eventFormData.date).toISOString(),
-      bookingOpens: new Date(eventFormData.bookingOpens).toISOString(),
-      assignedPonds: eventFormData.assignedPonds,
-      games: eventFormData.games
+      startDate: new Date(eventFormData.date + 'T' + eventFormData.startTime),
+      endDate: new Date(eventFormData.date + 'T' + eventFormData.endTime),
+      bookingOpens: eventFormData.bookingOpens ? new Date(eventFormData.bookingOpens) : new Date(),
+      pondIds: eventFormData.assignedPonds,
+    }
 
-    }
-    
     if (editingEvent) {
-      const success = updateEvent(editingEvent.id, finalEventData)
-      if (success) {
-        alert('Event updated successfully!')
-      } else {
-        alert('Failed to update event.')
-      }
+      const resp = await updateEventApi(editingEvent.id, finalEventData)
+      if (resp.ok) alert('Event updated successfully!')
+      else alert('Failed to update event: ' + resp.error)
     } else {
-      addEvent(finalEventData)
-      alert('Event created successfully!')
+      const resp = await createEventApi(finalEventData)
+      if (resp.ok) alert('Event created successfully!')
+      else alert('Failed to create event: ' + resp.error)
     }
-    
+
     setIsEventDialogOpen(false)
     setEditingEvent(null)
     resetEventForm()
@@ -217,8 +250,8 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     if (confirm(`Are you sure you want to delete "${eventName}"? This action cannot be undone.`)) {
       setIsLoading(true)
       try {
-        const result = deleteEvent(eventId)
-        if (result.success) {
+        const result = await deleteEventApi(eventId)
+        if (result.ok) {
           alert('Event deleted successfully!')
           loadData()
         } else {
@@ -239,12 +272,9 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     
     setIsLoading(true)
     try {
-      const success = updateEventStatus(eventId, newStatus)
-      if (success) {
-        loadData()
-      } else {
-        alert('Failed to update event status.')
-      }
+      const resp = await updateEventApi(eventId, { status: newStatus })
+      if (resp.ok) loadData()
+      else alert('Failed to update event status: ' + resp.error)
     } catch (error) {
       console.error('Error updating event status:', error)
       alert('Error updating event status. Please try again.')
@@ -257,9 +287,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     if (confirm(`Cancel ALL bookings for "${eventName}"? This action cannot be undone.`)) {
       setIsLoading(true)
       try {
-        const canceledCount = cancelAllEventBookings(eventId)
-        alert(`${canceledCount} bookings canceled for ${eventName}.`)
-        loadData()
+        alert('Cancel all bookings is not implemented on server yet.')
       } catch (error) {
         console.error('Error canceling bookings:', error)
         alert('Error canceling bookings. Please try again.')
@@ -564,7 +592,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-gray-500" />
-                        <span>{formatEventTimeRange(event.startTime, event.endTime)}</span>
+                        <span>{formatEventTimeRange(event)}</span>
                       </div>
                       {/* // Replace the pond display section in the event card */}
                       <div className="flex items-center gap-2">
