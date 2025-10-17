@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { login, getCurrentUser } from '@/lib/auth'
-import { getUnreadNotificationCount } from '@/lib/localStorage'
+import { login } from '@/lib/auth'
+import { fetchUnreadNotificationCount, fetchCurrentUserFromSession } from '@/lib/api'
 import { testNotificationBadges } from '@/lib/testBadges'
 
 export default function DebugPage() {
@@ -15,23 +15,22 @@ export default function DebugPage() {
   }, [])
 
   const checkAuthState = () => {
-    const user = getCurrentUser()
-    const info: any = {
-      currentUser: user,
-      isLoggedIn: !!user,
-      localStorage: {
-        authState: localStorage.getItem('authState'),
-        users: localStorage.getItem('users'),
-        fishingAppDB: localStorage.getItem('fishingAppDB'),
+    ;(async () => {
+      const user = await fetchCurrentUserFromSession()
+      const notificationCount = user ? await fetchUnreadNotificationCount() : 0
+      const info: any = {
+        currentUser: user,
+        isLoggedIn: !!user,
+        localStorage: {
+          authState: typeof window !== 'undefined' ? localStorage.getItem('authState') : null,
+          users: typeof window !== 'undefined' ? localStorage.getItem('users') : null,
+          fishingAppDB: typeof window !== 'undefined' ? localStorage.getItem('fishingAppDB') : null,
+        },
+        notificationCount
       }
-    }
-
-    if (user) {
-      info.notificationCount = getUnreadNotificationCount(user.id)
-    }
-
-    setDebugInfo(info)
-    setIsLoggedIn(!!user)
+      setDebugInfo(info)
+      setIsLoggedIn(!!user)
+    })()
   }
 
   const testLogin = async (email: string, password: string) => {

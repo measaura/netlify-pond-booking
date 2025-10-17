@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Bell, AlertTriangle, Trophy, Calendar, Settings, CheckCircle, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from '@/lib/auth'
-import { getUserNotifications, markNotificationAsRead } from '@/lib/localStorage'
+// use server APIs instead of localStorage
 import type { Notification } from '@/types'
 
 export default function NotificationDetailPage() {
@@ -25,24 +25,31 @@ export default function NotificationDetailPage() {
 
   useEffect(() => {
     if (user?.id && notificationId) {
-      const userNotifications = getUserNotifications(user.id)
-      const foundNotification = userNotifications.find(n => n.id === notificationId)
-      
-      if (foundNotification) {
-        setNotification(foundNotification)
-        
-        // Mark as read if not already read
-        if (!foundNotification.isRead) {
-          markNotificationAsRead(notificationId)
-          // Trigger notification update event
-          window.dispatchEvent(new CustomEvent('notificationUpdate'))
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/notifications/list?unread=false`)
+          if (!res.ok) {
+            router.push('/notifications')
+            return
+          }
+          const data = await res.json()
+          const found = (data.notifications || []).find((n: any) => n.id === notificationId)
+          if (!found) {
+            router.push('/notifications')
+            return
+          }
+          setNotification(found)
+
+          if (!found.isRead) {
+            await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: notificationId }) })
+            window.dispatchEvent(new CustomEvent('notificationUpdate'))
+          }
+        } catch (e) {
+          router.push('/notifications')
+        } finally {
+          setLoading(false)
         }
-      } else {
-        // Notification not found or doesn't belong to user
-        router.push('/notifications')
-      }
-      
-      setLoading(false)
+      })()
     }
   }, [user, notificationId, router])
 

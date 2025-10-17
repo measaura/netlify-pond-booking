@@ -11,19 +11,53 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/lib/auth"
 import { ManagerNavigation } from '@/components/ManagerNavigation'
-import { 
-  validateQRCode, 
-  validateQRCodeForCheckout,
-  checkInUser, 
-  checkOutUser,
-  getTodayCheckIns,
-  getCheckInStats,
-  getPondCurrentOccupancy,
-  getAllCurrentCheckIns,
-  markAsNoShow,
-  recordCatch,
-  getCatchesByUser,
-} from "@/lib/localStorage"
+import { ToastProvider, useToast, useToastSafe } from '@/components/ui/toast'
+// Server-backed helpers will replace the previous localStorage-based helpers.
+// We use fetch against the API routes implemented on the server.
+
+async function validateQrServer(qrCode: string) {
+  const res = await fetch('/api/qr/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ qrCode })
+  })
+  if (!res.ok) return { ok: false }
+  const json = await res.json()
+  return json.data
+}
+
+async function createCheckInServer(qrCode: string) {
+  const res = await fetch('/api/checkins', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ qrCode })
+  })
+  return res.json()
+}
+
+async function checkoutServer(checkInId: number) {
+  const res = await fetch('/api/checkins/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ checkInId })
+  })
+  return res.json()
+}
+
+async function fetchTodayCheckIns() {
+  const res = await fetch('/api/checkins/today')
+  if (!res.ok) return []
+  const json = await res.json()
+  return json.data || []
+}
+
+function computeStatsFromCheckIns(checkIns: any[]) {
+  const totalToday = checkIns.length
+  const currentlyCheckedIn = checkIns.filter((c) => c.status === 'checked-in').length
+  const totalCheckOuts = checkIns.filter((c) => c.status === 'checked-out').length
+  const noShows = checkIns.filter((c) => c.status === 'no-show').length
+  return { currentlyCheckedIn, totalToday, totalCheckOuts, noShows }
+}
 import type { BookingData, CheckInRecord, QRValidationResult, CatchRecord } from '@/types'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 
@@ -40,6 +74,9 @@ interface ScanResult {
 
 export default function ScannerPage() {
   const { user } = useAuth()
+  // Use safe hook - returns null when provider isn't available during SSR
+  const toastCtx = useToastSafe()
+  const toast = toastCtx
   const qrScannerRef = useRef<Html5QrcodeScanner | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [scanMode, setScanMode] = useState<'checkin' | 'checkout' | 'catch'>('checkin')
@@ -51,7 +88,7 @@ export default function ScannerPage() {
   const [catchDialog, setCatchDialog] = useState<{ open: boolean; checkInRecord?: CheckInRecord; booking?: BookingData }>({ open: false })
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; title: string; message: string; type: 'error' | 'warning' }>({ open: false, title: '', message: '', type: 'error' })
   const [todayCheckIns, setTodayCheckIns] = useState<CheckInRecord[]>([])
-  const [stats, setStats] = useState(getCheckInStats())
+  const [stats, setStats] = useState(() => ({ currentlyCheckedIn: 0, totalToday: 0, totalCheckOuts: 0, noShows: 0 }))
   const [notes, setNotes] = useState('')
   const [cameraStatus, setCameraStatus] = useState<'checking' | 'available' | 'unavailable'>('checking')
   const [catchData, setCatchData] = useState({
@@ -154,12 +191,22 @@ export default function ScannerPage() {
       
       const errorMsg = (err as Error).message || String(err)
       
-      if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
-        alert('Camera permission denied. Please allow camera access and try again.')
-      } else if (errorMsg.includes('NotFoundError')) {
-        alert('No camera found. Please ensure your device has a working camera.')
+      if (toast) {
+        if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
+          toast.push({ message: 'Camera permission denied. Please allow camera access and try again.', variant: 'error' })
+        } else if (errorMsg.includes('NotFoundError')) {
+          toast.push({ message: 'No camera found. Please ensure your device has a working camera.', variant: 'error' })
+        } else {
+          toast.push({ message: `Scanner error: ${errorMsg}\nPlease try refreshing the page.`, variant: 'error' })
+        }
       } else {
-        alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
+        if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
+          alert('Camera permission denied. Please allow camera access and try again.')
+        } else if (errorMsg.includes('NotFoundError')) {
+          alert('No camera found. Please ensure your device has a working camera.')
+        } else {
+          alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
+        }
       }
     }
   }
@@ -176,9 +223,14 @@ export default function ScannerPage() {
     console.log('QR Scanner stopped')
   }
 
-  const refreshData = () => {
-    setTodayCheckIns(getTodayCheckIns())
-    setStats(getCheckInStats())
+  const refreshData = async () => {
+    try {
+      const items = await fetchTodayCheckIns()
+      setTodayCheckIns(items)
+      setStats(computeStatsFromCheckIns(items))
+    } catch (e) {
+      console.error('Failed to refresh check-in data', e)
+    }
   }
 
 
@@ -222,40 +274,39 @@ export default function ScannerPage() {
 
 
 
-  const handleQRScan = (qrData: string) => {
+  const handleQRScan = async (qrData: string) => {
     if (!user || isProcessingCheckIn) return
 
     console.log('QR Data scanned:', qrData, 'Mode:', scanMode)
     
     if (scanMode === 'checkin') {
-      // Check-in mode - use existing validation
-      const validation = validateQRCode(qrData, user.email)
-      setCurrentScan(validation)
+      // Check-in mode - validate via server
+      const validation = await validateQrServer(qrData)
+      setCurrentScan(validation as any)
 
       // Create scan result for history
       const scanResult: ScanResult = {
         timestamp: new Date().toLocaleTimeString(),
-        valid: validation.valid,
-        bookingId: validation.booking?.bookingId,
-        pond: validation.booking?.pond?.name,
-        seats: validation.booking?.seats?.map(s => s.number.toString()),
-        error: validation.error,
-        status: validation.valid ? 
-          (validation.alreadyCheckedIn ? 'warning' : 'success') : 'error'
+        valid: !!(validation && validation.seat),
+        bookingId: validation?.booking?.bookingId,
+        pond: validation?.booking?.pond?.name,
+        seats: validation?.booking?.seats?.map((s: any) => String(s.number)),
+        error: validation?.error,
+        status: validation && validation.checkedIn ? 'warning' : (validation && validation.seat ? 'success' : 'error')
       }
 
       setScanResults(prev => [scanResult, ...prev.slice(0, 9)]) // Keep last 10 results
 
       // If valid and not already checked in, show check-in dialog
-      if (validation.valid && validation.booking && !validation.alreadyCheckedIn) {
-        setCheckInDialog({ 
-          open: true, 
+      if (validation && validation.seat && !validation.checkedIn) {
+        setCheckInDialog({
+          open: true,
           booking: validation.booking,
-          validation 
+          validation: validation
         })
         // Pause scanning while processing
         setIsProcessingCheckIn(true)
-      } else if (validation.valid && validation.alreadyCheckedIn) {
+      } else if (validation && validation.checkedIn) {
         // User is already checked in - show warning and don't allow re-check-in
         setErrorDialog({
           open: true,
@@ -263,13 +314,13 @@ export default function ScannerPage() {
           message: 'This user is already checked in!\n\nUse Check-Out mode to check them out first.',
           type: 'warning'
         })
-      } else if (!validation.valid) {
+      } else if (!(validation && validation.seat)) {
         // Invalid QR code - show error message
         let enhancedMessage = validation.error || 'Please scan a valid booking QR code.'
         
         // Add booking details for date/time errors
         if ((validation.isWrongTime || validation.isWrongDate) && validation.booking) {
-          const bookingDate = new Date(validation.booking.date)
+          const bookingDate = new Date((validation as any).booking.date)
           const formattedDate = bookingDate.toLocaleDateString('en-GB') // dd/mm/yyyy format
           
           // Format time slot to 12-hour format
@@ -291,7 +342,7 @@ export default function ScannerPage() {
             }
           }
           
-          enhancedMessage += `\n\n📋 Booking Details:\n• Date: ${formattedDate}\n• Time: ${formattedTimeSlot}\n• Pond: ${validation.booking.pond?.name || 'Unknown'}\n• Seat: ${validation.booking.seats?.map(s => s.number).join(', ') || 'Unknown'}`
+          enhancedMessage += `\n\n📋 Booking Details:\n• Date: ${formattedDate}\n• Time: ${formattedTimeSlot}\n• Pond: ${(validation as any).booking.pond?.name || 'Unknown'}\n• Seat: ${(validation as any).booking.seats?.map((s: any) => s.number).join(', ') || 'Unknown'}`
         }
         
         setErrorDialog({
@@ -303,32 +354,32 @@ export default function ScannerPage() {
       }
     } else {
       // Check-out mode - use checkout validation
-      const validation = validateQRCodeForCheckout(qrData, user.email)
-      setCurrentScan(validation)
+  const validation = await validateQrServer(qrData)
+      setCurrentScan(validation as any)
 
       // Create scan result for history
       const scanResult: ScanResult = {
         timestamp: new Date().toLocaleTimeString(),
-        valid: validation.valid,
-        bookingId: validation.booking?.bookingId,
-        pond: validation.booking?.pond?.name,
-        seats: validation.booking?.seats?.map(s => s.number.toString()),
-        error: validation.error,
-        status: validation.valid ? 'success' : 'error'
+        valid: !!(validation && validation.seat),
+        bookingId: validation?.booking?.bookingId,
+        pond: validation?.booking?.pond?.name,
+        seats: validation?.booking?.seats?.map((s: any) => String(s.number)),
+        error: validation?.error,
+        status: validation && validation.checkInRecords && validation.checkInRecords.length > 0 ? 'success' : 'error'
       }
 
       setScanResults(prev => [scanResult, ...prev.slice(0, 9)]) // Keep last 10 results
 
       // If valid for checkout, show check-out dialog
-      if (validation.valid && validation.booking && validation.checkInRecord) {
-        setCheckOutDialog({ 
-          open: true, 
-          checkInRecord: validation.checkInRecord,
+      if (validation && validation.checkInRecords && validation.checkInRecords.length > 0) {
+        setCheckOutDialog({
+          open: true,
+          checkInRecord: validation.checkInRecords[0],
           booking: validation.booking
         })
         // Pause scanning while processing
         setIsProcessingCheckIn(true)
-      } else if (!validation.valid) {
+      } else if (!(validation && validation.checkInRecords && validation.checkInRecords.length > 0)) {
         // Invalid QR code for checkout - show error message
         setErrorDialog({
           open: true,
@@ -345,40 +396,51 @@ export default function ScannerPage() {
 
     try {
       // Process check-in
-      const checkInRecord = checkInUser(checkInDialog.booking, user.email, notes)
-      
+      // Process check-in via server
+  const qrCode = (checkInDialog.validation as any)?.seat?.qrCode || (checkInDialog.booking?.seats?.[0] as any)?.qrCode
+      if (!qrCode) throw new Error('Missing QR code for check-in')
+      const resp = await createCheckInServer(qrCode)
+      if (!resp || !resp.ok) throw new Error(resp?.error || 'Check-in failed')
+
       // Update scan result to show success
       setScanResults(prev => prev.map((result, index) => 
         index === 0 ? { ...result, status: 'success' as const, userName: 'Checked In' } : result
       ))
 
       // Refresh data
-      refreshData()
+      await refreshData()
 
       // Close dialog
       setCheckInDialog({ open: false })
       setNotes('')
       setIsProcessingCheckIn(false)
 
-      // Show success message
-      alert(`✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
+  // Show success message
+  const checkInMsg = `✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: any) => s.number).join(', ')}`
+  if (toast) toast.push({ message: checkInMsg, variant: 'success', title: 'Check-in' })
+  else alert(checkInMsg)
 
     } catch (error) {
       console.error('Check-in error:', error)
-      alert('❌ Check-in failed. Please try again.')
+  if (toast) toast.push({ message: '❌ Check-in failed. Please try again.', variant: 'error' })
+  else alert('❌ Check-in failed. Please try again.')
       setIsProcessingCheckIn(false)
     }
   }
 
-  const handleCheckOut = (checkInId: string) => {
+  const handleCheckOut = async (checkInId: string) => {
     if (!user) return
     
-    const success = checkOutUser(checkInId, user.email)
-    if (success) {
-      refreshData()
-      alert('✅ Check-out successful!')
-    } else {
-      alert('❌ Check-out failed.')
+    try {
+      const resp = await checkoutServer(Number(checkInId))
+      if (!resp || !resp.ok) throw new Error(resp?.error || 'Check-out failed')
+      await refreshData()
+  if (toast) toast.push({ message: '✅ Check-out successful!', variant: 'success' })
+  else alert('✅ Check-out successful!')
+    } catch (e) {
+      console.error('Check-out error', e)
+  if (toast) toast.push({ message: '❌ Check-out failed.', variant: 'error' })
+  else alert('❌ Check-out failed.')
     }
   }
 
@@ -387,38 +449,45 @@ export default function ScannerPage() {
 
     try {
       // Process QR-based check-out
-      const success = checkOutUser(checkOutDialog.checkInRecord.id, user.email)
-      
-      if (success) {
-        // Update scan result to show success
-        setScanResults(prev => prev.map((result, index) => 
-          index === 0 ? { ...result, status: 'success' as const, userName: 'Checked Out' } : result
-        ))
+  const resp = await checkoutServer(Number(checkOutDialog.checkInRecord.id))
+      if (!resp || !resp.ok) throw new Error(resp?.error || 'Check-out failed')
 
-        // Refresh data
-        refreshData()
+      // Update scan result to show success
+      setScanResults(prev => prev.map((result, index) => 
+        index === 0 ? { ...result, status: 'success' as const, userName: 'Checked Out' } : result
+      ))
 
-        // Close dialog
-        setCheckOutDialog({ open: false })
-        setIsProcessingCheckIn(false)
+      // Refresh data
+      await refreshData()
 
-        alert(`✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
-      } else {
-        throw new Error('Check-out operation failed')
-      }
+      // Close dialog
+      setCheckOutDialog({ open: false })
+      setIsProcessingCheckIn(false)
+
+  const checkOutMsg = `✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: any) => s.number).join(', ')}`
+  if (toast) toast.push({ message: checkOutMsg, variant: 'success', title: 'Check-out' })
+  else alert(checkOutMsg)
 
     } catch (error) {
       console.error('Check-out error:', error)
-      alert('❌ Check-out failed. Please try again.')
+  if (toast) toast.push({ message: '❌ Check-out failed. Please try again.', variant: 'error' })
+  else alert('❌ Check-out failed. Please try again.')
       setIsProcessingCheckIn(false)
     }
   }
 
-  const handleMarkNoShow = (bookingId: string) => {
-    const success = markAsNoShow(bookingId)
-    if (success) {
-      refreshData()
-      alert('Marked as no-show')
+  const handleMarkNoShow = async (bookingId: string) => {
+    try {
+      const res = await fetch('/api/bookings/mark-no-show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bookingId }) })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Failed to mark no-show')
+      await refreshData()
+  if (toast) toast.push({ message: 'Marked as no-show', variant: 'info' })
+  else alert('Marked as no-show')
+    } catch (e) {
+      console.error('Mark no-show failed', e)
+  if (toast) toast.push({ message: 'Failed to mark no-show', variant: 'error' })
+  else alert('Failed to mark no-show')
     }
   }
 

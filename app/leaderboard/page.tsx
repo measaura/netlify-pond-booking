@@ -13,11 +13,7 @@ import {
   Calendar, Users, Star, Medal
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { 
-  generateEventLeaderboard, 
-  getEvents, 
-  getUserParticipatedEvents,
-} from '@/lib/localStorage'
+import { getEvents } from '@/lib/db-functions'
 import type { Event, EventLeaderboard, LeaderboardEntry } from '@/types'
 
 function CurrentEventLeaderboard() {
@@ -27,20 +23,31 @@ function CurrentEventLeaderboard() {
 
   useEffect(() => {
     if (!user) return
-    
-    try {
-      // Get the most recent event that the user participated in
-      const participatedEvents = getUserParticipatedEvents(user.id)
-      
-      if (participatedEvents.length > 0) {
-        const mostRecentEvent = participatedEvents[0] // Already sorted by date desc
-        const leaderboard = generateEventLeaderboard(mostRecentEvent.id)
-        setCurrentEventLeaderboard(leaderboard)
+
+    let mounted = true
+    ;(async () => {
+      try {
+        // Fetch user's participated events from server
+        const peRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+        const peJson = await peRes.json()
+        if (!peJson.ok || !mounted) return
+
+        const participatedEvents = peJson.data as any[]
+        if (participatedEvents.length > 0) {
+          const mostRecentEvent = participatedEvents[0]
+          // Fetch leaderboard for the most recent event
+          const lbRes = await fetch(`/api/leaderboard/event?eventId=${mostRecentEvent.id}`)
+          const lbJson = await lbRes.json()
+          if (lbJson.ok && mounted) setCurrentEventLeaderboard(lbJson.data)
+        }
+      } catch (error) {
+        console.error('Error loading current event leaderboard:', error)
+      } finally {
+        if (mounted) setLoading(false)
       }
-    } catch (error) {
-      console.error('Error loading current event leaderboard:', error)
-    }
-    setLoading(false)
+    })()
+
+    return () => { mounted = false }
   }, [user])
 
   if (loading) {
@@ -160,34 +167,41 @@ function PastEventLeaderboards() {
 
   useEffect(() => {
     if (!user) return
-    
-    try {
-      const userEvents = getUserParticipatedEvents(user.id)
-      // Remove the most recent event (current) to show only past events
-      const pastEvents = userEvents.slice(1)
-      setParticipatedEvents(pastEvents)
-      
-      // Generate leaderboards for past events
-      const leaderboards: { [eventId: number]: EventLeaderboard } = {}
-      pastEvents.forEach(event => {
-        try {
-          const eventLeaderboard = generateEventLeaderboard(event.id)
-          leaderboards[event.id] = eventLeaderboard
-        } catch (error) {
-          console.error(`Error generating leaderboard for event ${event.id}:`, error)
+
+    let mounted = true
+    ;(async () => {
+      try {
+        const peRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+        const peJson = await peRes.json()
+        if (!peJson.ok || !mounted) return
+
+        const userEvents = peJson.data as any[]
+        const pastEvents = userEvents.slice(1)
+        setParticipatedEvents(pastEvents)
+
+        // Generate leaderboards for past events via server
+        const leaderboards: { [eventId: number]: EventLeaderboard } = {}
+        for (const ev of pastEvents) {
+          try {
+            const bRes = await fetch(`/api/leaderboard/event?eventId=${ev.id}`)
+            const bJson = await bRes.json()
+            if (bJson.ok) leaderboards[ev.id] = bJson.data
+          } catch (error) {
+            console.error(`Error fetching leaderboard for event ${ev.id}:`, error)
+          }
         }
-      })
-      
-      setEventLeaderboards(leaderboards)
-      
-      // Set default selected event to the first past event
-      if (pastEvents.length > 0) {
-        setSelectedEventId(pastEvents[0].id)
+
+        if (!mounted) return
+        setEventLeaderboards(leaderboards)
+        if (pastEvents.length > 0) setSelectedEventId(pastEvents[0].id)
+      } catch (error) {
+        console.error('Error loading past event leaderboards:', error)
+      } finally {
+        if (mounted) setLoading(false)
       }
-    } catch (error) {
-      console.error('Error loading past event leaderboards:', error)
-    }
-    setLoading(false)
+    })()
+
+    return () => { mounted = false }
   }, [user])
 
   if (loading) {

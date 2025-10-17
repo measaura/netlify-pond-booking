@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ClientBody from "./ClientBody";
+import { ToastProvider } from '@/components/ui/toast'
 import Script from "next/script";
 
 // Import CSS with explicit type to ensure same.new processes it correctly
@@ -46,7 +47,11 @@ export default function RootLayout({
         `}</style>
       </head>
       <body suppressHydrationWarning className="antialiased">
-        <ClientBody>{children}</ClientBody>
+        <ClientBody>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </ClientBody>
       </body>
     </html>
   );

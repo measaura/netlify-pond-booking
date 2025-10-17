@@ -13,14 +13,44 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Bell, AlertTriangle, Trophy, Calendar, Settings, CheckCircle, Trash2, Check, RefreshCw, Info } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from '@/lib/auth'
-import { 
-  getUserNotifications, 
-  markNotificationAsRead, 
-  deleteNotification,
-  markAllNotificationsAsRead,
-  addNotification,
-  getUnreadNotificationCount 
-} from '@/lib/localStorage'
+// API-backed helpers (server derives user from session)
+async function fetchNotifications() {
+  const res = await fetch(`/api/notifications/list?unread=false`)
+  if (!res.ok) throw new Error('Failed to load')
+  const json = await res.json()
+  return json.notifications
+}
+
+async function fetchUnreadCount() {
+  const res = await fetch(`/api/notifications/unread`)
+  if (!res.ok) return 0
+  const json = await res.json()
+  return json.count || 0
+}
+
+async function apiMarkAsRead(notificationId: number) {
+  const res = await fetch('/api/notifications/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: notificationId }),
+  })
+  if (!res.ok) throw new Error('Failed to mark read')
+  return await res.json()
+}
+
+async function apiDeleteNotification(notificationId: number) {
+  const res = await fetch(`/api/notifications?id=${notificationId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete')
+  return await res.json()
+}
+
+async function apiMarkAllRead() {
+  const res = await fetch('/api/notifications/mark-all-read', {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Failed to mark all')
+  return await res.json()
+}
 import type { Notification } from '@/types'
 
 // Custom event for notification updates
@@ -38,13 +68,13 @@ export default function NotificationsPage() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
 
-  const loadNotifications = () => {
+  const loadNotifications = async () => {
     setIsLoading(true)
     try {
       if (user?.id) {
-        const userNotifications = getUserNotifications(user.id)
+        const userNotifications = await fetchNotifications()
         setNotifications(userNotifications)
-        const count = getUnreadNotificationCount(user.id)
+        const count = await fetchUnreadCount()
         setUnreadCount(count)
       }
     } catch (error) {
@@ -83,43 +113,49 @@ export default function NotificationsPage() {
     }
   }
 
-  const markAsRead = (notificationId: number) => {
-    if (markNotificationAsRead(notificationId)) {
-      loadNotifications() // Reload to get updated counts
-      triggerNotificationUpdate() // Trigger event for navigation badge update
+  const markAsRead = async (notificationId: number) => {
+    try {
+      await apiMarkAsRead(notificationId)
+      await loadNotifications()
+      triggerNotificationUpdate()
+    } catch (err) {
+      console.error(err)
     }
   }
 
-  const handleDelete = (notificationId: number) => {
-    if (confirm('Are you sure you want to delete this notification?')) {
-      deleteNotification(notificationId)
-      loadNotifications()
+  const handleDelete = async (notificationId: number) => {
+    if (!confirm('Are you sure you want to delete this notification?')) return
+    try {
+      await apiDeleteNotification(notificationId)
+      await loadNotifications()
       triggerNotificationUpdate()
+    } catch (err) {
+      console.error(err)
     }
   }
 
-  const handleMarkAllAsRead = () => {
-    if (user?.id) {
-      markAllNotificationsAsRead(user.id)
-      loadNotifications()
+  const handleMarkAllAsRead = async () => {
+    if (!user?.id) return
+    try {
+      await apiMarkAllRead()
+      await loadNotifications()
       triggerNotificationUpdate()
+    } catch (err) {
+      console.error(err)
     }
   }
 
-  const handleCreateTestNotification = () => {
-    if (user?.id) {
-      const testNotification: Omit<Notification, 'id' | 'createdAt'> = {
-        userId: user.id,
-        type: 'system',
-        title: 'System Alert',
-        message: 'This is a test admin notification created at ' + new Date().toLocaleTimeString(),
-        isRead: false,
-        priority: 'high'
-      }
-      
-      addNotification(testNotification)
-      loadNotifications()
-      triggerNotificationUpdate()
+  const handleCreateTestNotification = async () => {
+    if (!user?.id) return
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, type: 'system', title: 'System Alert', message: 'This is a test admin notification created at ' + new Date().toLocaleTimeString(), priority: 'high' })
+      })
+      await loadNotifications()
+    } catch (err) {
+      console.error(err)
     }
   }
 

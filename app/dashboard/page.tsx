@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Fish, Users, Calendar, MapPin, Clock, Star, Target, Trophy, Award, TrendingUp } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { getUserLeaderboardStats, generateEventLeaderboard, getCatchesByUser, getUserParticipatedEvents } from '@/lib/localStorage'
 import type { LeaderboardEntry, EventLeaderboard } from '@/types'
 
 function LeaderboardCard() {
@@ -21,23 +20,32 @@ function LeaderboardCard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user) {
+    async function load() {
+      if (!user) return
       try {
-        const stats = getUserLeaderboardStats(user.id)
-        setUserStats(stats)
-        
-        // Get current event leaderboard (most recent participated event)
-        const participatedEvents = getUserParticipatedEvents(user.id)
-        if (participatedEvents.length > 0) {
-          const currentEvent = participatedEvents[0] // Most recent
-          const eventLeaderboard = generateEventLeaderboard(currentEvent.id)
-          setCurrentEventLeaderboard(eventLeaderboard)
+        const resUser = await fetch(`/api/leaderboard/user?userId=${user.id}`)
+        const jsonUser = await resUser.json()
+        if (jsonUser.ok) setUserStats(jsonUser.data)
+
+        // Fetch user's participated events and pick the most recent
+        try {
+          const partRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+          const partJson = await partRes.json()
+          if (partJson.ok && Array.isArray(partJson.data) && partJson.data.length > 0) {
+            const currentEvent = partJson.data[0]
+            const evRes = await fetch(`/api/leaderboard/event?eventId=${currentEvent.id}`)
+            const evJson = await evRes.json()
+            if (evJson.ok) setCurrentEventLeaderboard(evJson.data)
+          }
+        } catch (e) {
+          // noop - keep previous behavior (no leaderboard)
         }
       } catch (error) {
         console.error('Error loading leaderboard:', error)
       }
       setLoading(false)
     }
+    load()
   }, [user])
 
   if (loading) {
@@ -60,7 +68,7 @@ function LeaderboardCard() {
       </div>
       <CardContent className="p-4">
         {/* User's Position */}
-        {userStats && currentEventLeaderboard ? (
+  {userStats && currentEventLeaderboard ? (
           <div className="bg-white rounded-lg p-3 mb-4 border border-yellow-200">
             <div className="flex items-center justify-between">
               <div>
@@ -178,37 +186,39 @@ function UserStats() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user) {
+    async function load() {
+      if (!user) return
       try {
-        // Get user's catches
-        const userCatches = getCatchesByUser(user.id)
-        const userLeaderboardStats = getUserLeaderboardStats(user.id)
-        const participatedEvents = getUserParticipatedEvents(user.id)
+        // Fetch user leaderboard stats
+        const userRes = await fetch(`/api/leaderboard/user?userId=${user.id}`)
+        const userJson = await userRes.json()
+        const userLeaderboardStats = userJson.ok ? userJson.data : null
 
-        const totalWeight = userCatches.reduce((sum, catch_) => sum + catch_.fishWeight, 0)
-        const bestCatch = userCatches.length > 0 ? Math.max(...userCatches.map(c => c.fishWeight)) : 0
+        // Fetch user's catches via catchRecords API (we don't have a direct API yet; use a simplified route if present)
+        // For now, reuse the db function via an API route future; fallback: zero values.
+        let userCatches: any[] = []
+        try {
+          const catchesRes = await fetch(`/api/catches?userId=${user.id}`)
+          const catchesJson = await catchesRes.json()
+          if (catchesJson.ok) userCatches = catchesJson.data
+        } catch (e) {
+          userCatches = []
+        }
+
+        const totalWeight = userCatches.reduce((sum: number, c: any) => sum + (c.weight || 0), 0)
+        const bestCatch = userCatches.length > 0 ? Math.max(...userCatches.map(c => c.weight || 0)) : 0
         const avgCatch = userCatches.length > 0 ? totalWeight / userCatches.length : 0
 
-        // Get current rank from most recent event
-        let currentRank = 0
-        let totalAnglers = 0
-        if (participatedEvents.length > 0) {
-          try {
-            const currentEventLeaderboard = generateEventLeaderboard(participatedEvents[0].id)
-            const userEntry = currentEventLeaderboard.entries.find(entry => entry.userId === user.id)
-            currentRank = userEntry?.rank || 0
-            totalAnglers = currentEventLeaderboard.entries.length
-          } catch (error) {
-            // Event might not have leaderboard data yet
-          }
-        }
+        // Determine current rank (best-effort via user's leaderboard stats)
+        let currentRank = userLeaderboardStats?.rank || 0
+        let totalAnglers = userLeaderboardStats ? 1 : 0
 
         setStats({
           totalCatches: userCatches.length,
           totalWeight: totalWeight,
           bestCatch: bestCatch,
           avgCatch: avgCatch,
-          competitionsJoined: participatedEvents.length,
+          competitionsJoined: userLeaderboardStats?.competitionsParticipated || 0,
           competitionsWon: userLeaderboardStats?.competitionsWon || 0,
           currentRank: currentRank,
           totalAnglers: totalAnglers
@@ -218,6 +228,7 @@ function UserStats() {
       }
       setLoading(false)
     }
+    load()
   }, [user])
 
   if (loading) {

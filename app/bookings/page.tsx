@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Fish, Calendar, Clock, MapPin, QrCode, Users, Trophy, AlertCircle, Trash2, User as UserIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
-import { getAllBookings, deleteBooking } from '@/lib/localStorage'
+import { fetchCurrentUserFromSession } from '@/lib/api'
 import type { BookingData } from '@/types'
 
 interface Booking {
@@ -182,23 +182,30 @@ function BookingsContent() {
   
   const isManager = user?.role === 'manager' || user?.role === 'admin'
 
-  const loadBookings = () => {
+  const loadBookings = async () => {
     try {
-      const allBookings = getAllBookings()
-      
-      if (!user) {
+      // Use server API to fetch bookings. Prefer deriving userId from session (user object).
+      const userIdParam = user?.id ? `userId=${encodeURIComponent(user.id)}` : ''
+      const allQuery = isManager ? '' : `?${userIdParam}`
+      const url = isManager ? '/api/bookings?userId=1' : `/api/bookings?${userIdParam}`
+      // If manager, fetch all bookings by calling a manager endpoint or passing no filter; here fallback to userId=1 for now
+  const res = await fetch(url)
+  const json = await res.json()
+  const allBookings: BookingData[] = Array.isArray(json.data) ? json.data : []
+
+      if (!user && !isManager) {
         setBookings([])
         setLoading(false)
         return
       }
-      
+
       // Filter bookings based on user role
-      const filteredBookings = isManager 
+      const filteredBookings = isManager
         ? allBookings // Managers see all bookings
-        : allBookings.filter(booking => booking.userId === user?.id) // Users see only their bookings
-      
+        : allBookings.filter((booking: BookingData) => booking.userId === user?.id) // Users see only their bookings
+
       console.log('Filtered bookings for user:', filteredBookings)
-      
+
       // Transform database bookings to match our interface
       const transformedBookings: Booking[] = filteredBookings.map((dbBooking: BookingData) => {
         const bookingDate = new Date(dbBooking.date)
@@ -259,26 +266,34 @@ function BookingsContent() {
   }
 
   useEffect(() => {
-    loadBookings()
+    // load bookings when component mounts
+    ;(async () => { await loadBookings() })()
   }, [])
 
   // Also reload bookings when user changes
   useEffect(() => {
     if (user) {
       console.log('User state changed in BookingsContent, reloading bookings')
-      loadBookings()
+      ;(async () => { await loadBookings() })()
     }
   }, [user])
 
   const handleDeleteBooking = (bookingId: string) => {
     try {
-      const success = deleteBooking(bookingId)
-      if (success) {
-        // Reload bookings after deletion
-        loadBookings()
-      } else {
-        alert('Failed to delete booking. Please try again.')
-      }
+      // Call server API to cancel booking
+      fetch(`/api/bookings?bookingId=${encodeURIComponent(bookingId)}`, { method: 'DELETE' })
+        .then(async (res) => {
+          if (res.ok) {
+            await loadBookings()
+          } else {
+            const j = await res.json().catch(() => ({}))
+            alert(j.error || 'Failed to delete booking. Please try again.')
+          }
+        })
+        .catch((err) => {
+          console.error('Error deleting booking:', err)
+          alert('Error deleting booking. Please try again.')
+        })
     } catch (error) {
       console.error('Error deleting booking:', error)
       alert('Error deleting booking. Please try again.')

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeft, Trophy, Star, Target, Calendar, Users, Award, Fish } from "lucide-react"
 import Link from "next/link"
-import { getAllBookings } from "@/lib/localStorage"
+// use server-backed bookings instead of client localStorage
 import type { BookingData } from '@/types'
 import { useAuth } from '@/lib/auth'
 
@@ -88,8 +88,22 @@ export default function FishingJourneyPage() {
   const [bookings, setBookings] = useState<BookingData[]>([])
 
   useEffect(() => {
-    const allBookings = getAllBookings()
-    setBookings(allBookings)
+    ;(async () => {
+      try {
+        const userIdParam = user?.id ? `userId=${encodeURIComponent(user.id)}` : 'userId=1'
+        const res = await fetch(`/api/bookings?${userIdParam}`)
+        if (!res.ok) {
+          setBookings([])
+          return
+        }
+        const json = await res.json()
+        const data = Array.isArray(json.data) ? json.data : []
+        setBookings(data)
+      } catch (err) {
+        console.error('Error loading bookings in Journey page', err)
+        setBookings([])
+      }
+    })()
   }, [])
 
   const earnedAchievements = achievements.filter(a => a.earned)

@@ -1,5 +1,16 @@
 import { login } from '@/lib/auth'
-import { getUnreadNotificationCount } from '@/lib/localStorage'
+
+async function fetchUnreadNotificationCount(userId: number): Promise<number> {
+  try {
+    const res = await fetch(`/api/notifications/unread?userId=${userId}`)
+    if (!res.ok) return 0
+    const data = await res.json()
+    return data.count || 0
+  } catch (e) {
+    console.error('fetchUnreadNotificationCount error', e)
+    return 0
+  }
+}
 
 // Test notification badges
 async function testNotificationBadges() {
@@ -13,11 +24,11 @@ async function testNotificationBadges() {
   let success = await login('user1@fishing.com', '123456@$')
   console.log('Login success:', success)
   
-  if (success) {
-    let count = getUnreadNotificationCount(1)
-    console.log('User 1 notification count:', count)
-    console.log('Expected: 2, Actual:', count, 'Match:', count === 2)
-  }
+    if (success) {
+      let count = await fetchUnreadNotificationCount(1)
+      console.log('User 1 notification count:', count)
+      console.log('Expected: 2, Actual:', count, 'Match:', count === 2)
+    }
   
   // Test Manager 1 (should have 2 notifications) 
   console.log('\n--- Testing Manager 1 ---')
@@ -26,7 +37,7 @@ async function testNotificationBadges() {
   console.log('Login success:', success)
   
   if (success) {
-    let count = getUnreadNotificationCount(4)
+    let count = await fetchUnreadNotificationCount(4)
     console.log('Manager 1 notification count:', count)
     console.log('Expected: 2, Actual:', count, 'Match:', count === 2)
   }
@@ -38,7 +49,7 @@ async function testNotificationBadges() {
   console.log('Login success:', success)
   
   if (success) {
-    let count = getUnreadNotificationCount(6)
+    let count = await fetchUnreadNotificationCount(6)
     console.log('Admin notification count:', count)
     console.log('Expected: 2, Actual:', count, 'Match:', count === 2)
   }

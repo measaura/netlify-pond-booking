@@ -7,17 +7,17 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Clock, Users, DollarSign, Fish, Trophy, CreditCard } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { getBookedSeatsForEvent, saveEventBookingWithAvailabilityUpdate, getEventById, getEventAvailableSeats, getPondById, formatEventTimeRange } from "@/lib/localStorage"
+import { formatEventTimeRange } from "@/lib/localStorage"
 import { useAuth } from '@/lib/auth'
 
 // Generate seats based on pond shape and seating arrangement for events
-const generateEventSeats = (pond: any, eventId: number, eventDate: string) => {
+const generateEventSeats = (pond: any, eventId: number, eventDate: string, eventOccupied: number[] | null = null) => {
   if (!pond) return []
   
   const seats = []
   
-  // Get already booked seats for this specific event
-  const bookedSeatIds = getBookedSeatsForEvent(eventId, eventDate)
+  // Get already booked seats for this specific event (injected)
+  const bookedSeatIds = eventOccupied ?? []
 
   // Use the pond's actual shape and seating arrangement
   const shape = pond.shape || 'rectangle'
@@ -137,29 +137,59 @@ export default function EventBookingPage() {
   const [step, setStep] = useState<'selection' | 'payment'>('selection')
   const [availableSeats, setAvailableSeats] = useState({ available: 0, total: 0 })
 
+  const [eventOccupied, setEventOccupied] = useState<number[] | null>(null)
+
   // Load event and pond data on mount
   useEffect(() => {
-    const eventData = getEventById(eventId)
-    if (eventData) {
-      setEvent(eventData)
-      const pondData = getPondById(eventData.assignedPonds[0])
-      setPond(pondData)
-      setAvailableSeats(getEventAvailableSeats(eventId))
-      
-      // Generate seats based on pond capacity and shape
-      if (pondData) {
-        const newSeats = generateEventSeats(pondData, eventId, eventData.date)
-        setSeats(newSeats)
+    const load = async () => {
+      try {
+        const eventsRes = await fetch('/api/events')
+        const eventsJson = await eventsRes.json()
+        const eventData = eventsJson.find((e: any) => e.id === eventId) ?? null
+        if (!eventData) return
+        setEvent(eventData)
+
+        const pondsRes = await fetch('/api/ponds')
+        const pondsJson = await pondsRes.json()
+        const pondData = pondsJson.find((p: any) => p.id === eventData.assignedPonds?.[0]) ?? null
+        setPond(pondData)
+
+        // Fetch occupied seats for this event/date
+        const occRes = await fetch(`/api/bookings/occupied?eventId=${eventId}&date=${encodeURIComponent(eventData.date)}`)
+        const occJson = await occRes.json()
+        const occupied = (occJson && occJson.data && Array.isArray(occJson.data.occupied)) ? occJson.data.occupied : []
+        setEventOccupied(occupied)
+
+        // Available seats: derive from pond capacity minus occupied
+        if (pondData) {
+          const total = pondData.capacity || 0
+          const avail = Math.max(0, total - occupied.length)
+          setAvailableSeats({ available: avail, total })
+          const newSeats = generateEventSeats(pondData, eventId, eventData.date, occupied)
+          setSeats(newSeats)
+        }
+      } catch (err) {
+        console.error('Failed to load event/pond data', err)
       }
     }
+
+    load()
   }, [eventId])
 
   // Function to refresh seat data after booking
-  const refreshSeats = () => {
-    if (event && pond) {
-      const newSeats = generateEventSeats(pond, eventId, event.date)
+  const refreshSeats = async () => {
+    if (!event || !pond) return
+    try {
+      const occRes = await fetch(`/api/bookings/occupied?eventId=${eventId}&date=${encodeURIComponent(event.date)}`)
+      const occJson = await occRes.json()
+  const occupied = (occJson && occJson.data && Array.isArray(occJson.data.occupied)) ? occJson.data.occupied : []
+  setEventOccupied(occupied)
+      const total = pond.capacity || 0
+      setAvailableSeats({ available: Math.max(0, total - occupied.length), total })
+  const newSeats = generateEventSeats(pond, eventId, event.date, occupied)
       setSeats(newSeats)
-      setAvailableSeats(getEventAvailableSeats(eventId))
+    } catch (err) {
+      console.error('Failed to refresh seats', err)
     }
   }
 
@@ -178,7 +208,7 @@ export default function EventBookingPage() {
     }
   }
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!selectedSeat) {
       alert('Please select a seat')
       return
@@ -197,56 +227,42 @@ export default function EventBookingPage() {
       return
     }
 
-    // Create booking data in the same format as pond booking
-    const bookingData = {
-      bookingId: `EV${Date.now()}`,
-      type: 'event' as const,
-      pond: {
-        id: event.pondId,
-        name: event.pondName,
-        image: '🏆' // Event icon
-      },
-      seats: [{
-        id: selectedSeatData.id,
-        row: 'E', // Events use 'E' for Event
-        number: selectedSeatData.number
-      }],
-      timeSlot: {
-        id: 1,
-        time: (event.startTime && event.endTime) ? 
-          formatEventTimeRange(event.startTime, event.endTime) : 
-          'Tournament Time',
-        label: 'Tournament Time'
-      },
+    // Construct payload expected by server
+    const payload = {
+      type: 'event',
+      eventId: event.id,
+      pondId: pond.id,
+      seats: [{ number: selectedSeatData.number, row: 'E' }],
       date: event.date,
       totalPrice: event.entryFee,
-      event: {
-        id: event.id,
-        name: event.name,
-        prize: event.prize
-      },
-      // Add user information
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email
+      bookedByUserId: user.id
     }
 
-    console.log('Event booking data being saved:', bookingData)
-    console.log('Selected seat data:', selectedSeatData)
-    console.log('Current booked seats before booking:', getBookedSeatsForEvent(eventId, event.date))
-
-    // Save using the enhanced database system for events
-    saveEventBookingWithAvailabilityUpdate(bookingData)
-    
-    // Verify what was actually saved
-    const saved = localStorage.getItem('currentBooking')
-    console.log('Saved event booking to localStorage:', saved)
-    
-    // Check if booking was saved properly
-    const newBookedSeats = getBookedSeatsForEvent(eventId, event.date)
-    console.log('Booked seats after booking:', newBookedSeats)
-    
-    router.push('/ticket')
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('Booking API error:', text)
+        alert('Failed to create booking')
+        return
+      }
+      const json = await res.json()
+      const bookingId = json.bookingId || json.id || json.booking?.id
+      if (!bookingId) {
+        alert('Booking created but no id returned')
+        return
+      }
+      // Refresh seats and navigate
+      await refreshSeats()
+      router.push(`/ticket?booking=${bookingId}`)
+    } catch (err) {
+      console.error('Failed to save event booking', err)
+      alert('Failed to create booking')
+    }
   }
 
   return (

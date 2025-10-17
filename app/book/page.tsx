@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Fish, Trophy, Users, Calendar, Clock, MapPin, Star } from 'lucide-react'
 import Link from 'next/link'
-import { getPonds, getEvents, getEventStatus, formatEventTimeRange} from '@/lib/localStorage'
+import { formatEventTimeRange} from '@/lib/localStorage'
 import { Pond, Event } from '@/types'
 
 function PondsTab() {
@@ -17,15 +17,22 @@ function PondsTab() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    try {
-      const pondData = getPonds()
-      setPonds(pondData)
-    } catch (error) {
-      console.error('Error loading ponds:', error)
-      setPonds([])
-    } finally {
-      setLoading(false)
+    let mounted = true
+    async function loadPonds() {
+      try {
+        const res = await fetch('/api/ponds')
+        const json = await res.json()
+        if (json.ok && mounted) setPonds(json.data)
+      } catch (err) {
+        console.error('Error loading ponds from API:', err)
+        if (mounted) setPonds([])
+      } finally {
+        if (mounted) setLoading(false)
+      }
     }
+
+    loadPonds()
+    return () => { mounted = false }
   }, [])
 
   if (loading) {
@@ -46,8 +53,9 @@ function PondsTab() {
       <div className="space-y-3">
         {ponds.map((pond) => {
           // Calculate availability status
+          const avail = pond.available ?? 0
           const availabilityStatus = pond.bookingEnabled 
-            ? (pond.available > 10 ? 'available' : pond.available > 0 ? 'limited' : 'full')
+            ? (avail > 10 ? 'available' : avail > 0 ? 'limited' : 'full')
             : 'disabled'
 
           // Generate features based on pond properties
@@ -132,7 +140,7 @@ function PondsTab() {
                       )}
                     </div>
 
-                    {pond.bookingEnabled && pond.available > 0 ? (
+                    {pond.bookingEnabled && (pond.available ?? 0) > 0 ? (
                       <Link href={`/booking/${pond.id}`}>
                         <Button className="bg-gradient-to-r from-blue-600 to-green-600">
                           Book Now
@@ -177,13 +185,24 @@ function EventsTab() {
 
   useEffect(() => {
     try {
-      const eventData = getEvents()
-      setEvents(eventData)
+      let mounted = true
+      ;(async function loadEvents() {
+        try {
+          const res = await fetch('/api/events')
+          const json = await res.json()
+          if (json.ok && mounted) setEvents(json.data)
+        } catch (err) {
+          console.error('Error loading events from API:', err)
+          if (mounted) setEvents([])
+        } finally {
+          if (mounted) setLoading(false)
+        }
+      })()
     } catch (error) {
       console.error('Error loading events:', error)
       setEvents([])
     } finally {
-      setLoading(false)
+      // handled in async loader
     }
   }, [])
 
@@ -204,7 +223,29 @@ function EventsTab() {
 
       <div className="space-y-3">
         {events.map((event) => {
-          const eventStatus = getEventStatus(event.id)
+          // Compute event status locally using server-provided fields
+          const computeEventStatus = (ev: any): 'open' | 'upcoming' | 'full' | 'closed' => {
+            try {
+              const now = new Date()
+              const bookingOpenDate = ev.bookingOpens ? new Date(ev.bookingOpens) : new Date(0)
+              const eventDate = ev.date ? new Date(ev.date) : new Date(0)
+
+              // If server supplied a participants count, use it for 'full' calculation
+              const participants = typeof ev.participants === 'number' ? ev.participants : null
+
+              if (now > eventDate) return 'closed'
+              if (participants !== null && participants >= (ev.maxParticipants ?? Infinity)) return 'full'
+              if (now < bookingOpenDate) return 'upcoming'
+              // Respect server-side status if provided
+              if (ev.status === 'closed') return 'closed'
+              return 'open'
+            } catch (err) {
+              console.error('Error computing event status', err)
+              return 'closed'
+            }
+          }
+
+          const eventStatus = computeEventStatus(event)
           
           // Determine difficulty based on entry fee
           const difficulty = event.entryFee >= 100 ? 'Advanced' : 

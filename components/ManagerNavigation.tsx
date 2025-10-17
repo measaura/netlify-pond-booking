@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react'
 import { Home, QrCode, Users, BarChart3, Settings, Bell } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
-import { getUnreadNotificationCount } from '@/lib/localStorage'
 
 export function ManagerNavigation() {
   const pathname = usePathname()
@@ -14,9 +13,23 @@ export function ManagerNavigation() {
   const [notificationCount, setNotificationCount] = useState(0)
 
   useEffect(() => {
-    if (user?.id) {
-      const count = getUnreadNotificationCount(user.id)
-      setNotificationCount(count)
+    const userId = user?.id
+    if (userId) {
+      let mounted = true
+      async function fetchCount() {
+        try {
+          const res = await fetch(`/api/notifications/unread?userId=${userId}`)
+          if (!res.ok) return
+          const json = await res.json()
+          if (mounted) setNotificationCount(json?.count ?? 0)
+        } catch (err) {
+          // ignore
+        }
+      }
+
+      fetchCount()
+
+      return () => { mounted = false }
     }
   }, [user])
 

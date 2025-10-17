@@ -5,7 +5,6 @@ import { Home, Calendar, Settings, Plus, Trophy, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { useState, useEffect } from 'react'
-import { getUnreadNotificationCount } from '@/lib/localStorage'
 
 interface NavigationItem {
   id: string
@@ -22,9 +21,23 @@ export function BottomNavigation() {
   const [notificationCount, setNotificationCount] = useState(0)
 
   useEffect(() => {
-    if (user?.id) {
-      const count = getUnreadNotificationCount(user.id)
-      setNotificationCount(count)
+    const userId = user?.id
+    if (userId) {
+      let mounted = true
+      async function fetchCount() {
+        try {
+          const res = await fetch(`/api/notifications/unread?userId=${userId}`)
+          if (!res.ok) return
+          const json = await res.json()
+          if (mounted) setNotificationCount(json?.count ?? 0)
+        } catch (err) {
+          // ignore
+        }
+      }
+
+      fetchCount()
+
+      return () => { mounted = false }
     } else {
       setNotificationCount(0)
     }
