@@ -1,23 +1,141 @@
 # Resume instructions for assistant
 
-This file captures the state of the last session and explains how to resume work in a new chat.
+**Quick Resume:** Type `resume` in a new chat to continue working on alert-to-toast migration.
 
-Date: 2025-10-15
-Branch: main
+**Last Updated:** October 17, 2025  
+**Current Branch:** feature/alert-to-toast  
+**Status:** Database refactor committed to main, alert migration in progress on feature branch
 
-What was done:
-- Fixed import error in `app/manager/monitor/page.tsx` by adjusting client fetch import to a relative path.
-- Began replacing `alert()` usages with the project's toast system (`useToastSafe()` + `toast.push(...)`) and falling back to `window.alert()` where needed.
-- Files modified so far:
-  - `app/manager/monitor/page.tsx` (import fix)
-  - `app/ticket/page.tsx` (alert -> toast)
-  - `app/booking/[pondId]/page.tsx` (many alert -> toast replacements)
-  - `app/admin/control/page.tsx` (alert -> toast replacements)
+---
 
-Pending tasks and recommended next steps:
-1. Continue replacing `alert()` occurrences across the repo. Priority files: `app/scanner/page.tsx`, `app/dedicated-scanner/page.tsx`, `app/admin/*` (ponds/events/games/prizes), `app/bookings/*`.
-2. After a batch of replacements, run a repo-wide TypeScript typecheck and `npm run lint`.
-3. Smoke-test critical flows (booking creation, scanner check-in/out, admin control actions) to ensure toasts show and behavior is correct.
+## 📍 Current State
+
+### ✅ Completed Work:
+
+**Database Refactor (Committed to main):**
+- Migrated entire app from localStorage to Railway PostgreSQL
+- Added Prisma ORM with 16+ models
+- Created 29 API route handlers
+- Updated all pages to use async database API
+- Committed in 8 logical commits to main branch
+
+**Alert Migration (On feature/alert-to-toast branch):**
+- Fixed import error in `app/manager/monitor/page.tsx`
+- Replaced alert() with toast in 3 files:
+  - `app/ticket/page.tsx` (share functionality)
+  - `app/booking/[pondId]/page.tsx` (booking validation)
+  - `app/admin/control/page.tsx` (system controls)
+- Branch rebased on top of main (includes all database changes)
+
+### 🔄 In Progress:
+- Alert-to-toast migration: ~15% complete (3 of ~20 files)
+- Remaining: scanner pages, admin pages, bookings pages
+
+### ⏳ Not Started:
+- Typecheck & lint validation
+- Smoke testing with real database
+- Complete remaining alert migrations
+- Open PR for review
+
+---
+
+## 🚀 How to Resume
+
+**One-line command for new chat:**
+```
+resume
+```
+
+**What happens when you type "resume":**
+1. Assistant reads this RESUME_SESSION.md file
+2. Reviews SESSION_RECAP.md for complete context
+3. Checks current branch (should be feature/alert-to-toast)
+4. Asks which task you want to continue
+
+---
+
+## 📋 Next Steps (Recommended Priority)
+
+1. **Continue Alert Migration** (High Priority)
+   - Next file: `app/dedicated-scanner/page.tsx`
+   - Pattern: Use `useToastSafe()` with `window.alert()` fallback
+   - Commit after every 3-5 files
+
+2. **Run Validation** (After batch of changes)
+   ```bash
+   npm run -s lint
+   npm run -s build
+   ```
+
+3. **Test Critical Flows** (When ~80% complete)
+   - Start dev server: `npm run dev`
+   - Test booking creation
+   - Test scanner check-in/out
+   - Test admin operations
+   - Verify toasts appear correctly
+
+4. **Open PR** (When ready for review)
+   - Document what was changed
+   - List remaining work
+   - Request review
+
+---
+
+## 🎯 Alert Migration Pattern
+
+```typescript
+// Import at top of file
+import { useToastSafe } from '@/components/ui/toast'
+
+// In component
+const toast = useToastSafe()
+
+// Replace alerts
+// Before:
+alert('Error message')
+
+// After:
+toast ? toast.push({ 
+  message: 'Error message', 
+  variant: 'error' 
+}) : window.alert('Error message')
+```
+
+**Variants:** `'success'`, `'error'`, `'info'`
+
+---
+
+## 📚 Additional Context
+
+- **SESSION_RECAP.md** - Complete session documentation with all details
+- **Database:** Railway PostgreSQL (requires internet connection)
+- **API Endpoints:** All 29 routes documented in SESSION_RECAP.md
+- **Toast System:** Located in `components/ui/toast.tsx`
+
+---
+
+## 🔍 Quick Commands
+
+```bash
+# Check current branch
+git branch --show-current
+
+# See uncommitted changes
+git status
+
+# Run linting
+npm run -s lint
+
+# Start dev server
+npm run dev
+
+# View recent commits
+git log --oneline -10
+```
+
+---
+
+**End of resume file. Type `resume` in a new chat to continue!**
 
 How to resume in a new chat:
 - Open this repository in the workspace.
