@@ -1,0 +1,383 @@
+// Prisma schema for Postgres migration
+// This file defines the database structure for all entities
+// Run `npx prisma migrate dev` to apply changes
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  MANAGER
+  ADMIN
+}
+
+enum BookingType {
+  POND    // Daily pond booking based on timeslots/hourly usage
+  EVENT   // Occasional competition set by Admin
+}
+
+enum GameType {
+  TARGET_WEIGHT    // Closest to target weight
+  EXACT_WEIGHT     // Exact weight match
+  HEAVIEST_WEIGHT  // Heaviest fish wins
+}
+
+enum PondShape {
+  RECTANGLE
+  SQUARE
+  CIRCLE
+}
+
+enum PrizeType {
+  MONEY
+  ITEM
+}
+
+model User {
+  id               Int                @id @default(autoincrement())
+  email            String             @unique
+  name             String?
+  password         String?
+  role             UserRole           @default(USER)
+  
+  // Booking relationships
+  bookingsLeader   Booking[]          @relation("BookingLeader")  // Bookings they paid for/created
+  assignedSeats    BookingSeat[]      @relation("AssignedSeats")  // Seats assigned to them
+  
+  // Rod and weighing relationships
+  assignedRods     FishingRod[]       // Currently assigned fishing rods
+  weighingRecords  WeighingRecord[]   // Their weighing records
+  rodPrintSessions RodPrintSession[]  // Self-service rod printing sessions
+  
+  checkIns         CheckInRecord[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  notifications    Notification[]
+  catchRecords     CatchRecord[]
+  leaderboardEntries LeaderboardEntry[]
+}
+
+model Pond {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  image              String?
+  maxCapacity        Int       // Maximum seating capacity
+  price              Float     // Price per booking/hour
+  bookingEnabled     Boolean   @default(true)
+  shape              PondShape @default(RECTANGLE)
+  seatingArrangement Json?     // {top: 10, right: 5, bottom: 10, left: 5} or {total: 30}
+  bookings           Booking[]
+  eventPonds         EventPond[] // Many-to-many with Events
+}
+
+model Event {
+  id               Int                @id @default(autoincrement())
+  name             String
+  description      String?
+  date             DateTime
+  startTime        String
+  endTime          String
+  maxParticipants  Int               // Max participants for entire event
+  maxSeatsPerBooking Int             // Max seats per individual booking
+  entryFee         Float
+  bookingOpens     DateTime
+  status           String            @default("upcoming") // upcoming, open, active, completed, cancelled
+  eventPonds       EventPond[]       // Many-to-many with Ponds  
+  games            Game[]            // One-to-many with Games
+  bookings         Booking[]
+  catchRecords     CatchRecord[]
+  weighingRecords  WeighingRecord[]  // Weighing records for this event
+  leaderboardEntries LeaderboardEntry[]
+  eventLeaderboards EventLeaderboard[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+// Junction table for Event-Pond many-to-many relationship
+model EventPond {
+  id      Int   @id @default(autoincrement())
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId Int
+  pond    Pond  @relation(fields: [pondId], references: [id], onDelete: Cascade)
+  pondId  Int
+  
+  @@unique([eventId, pondId])
+}
+
+model Booking {
+  id              Int             @id @default(autoincrement())
+  bookingId       String          @unique
+  type            BookingType
+  bookedBy        User            @relation("BookingLeader", fields: [bookedByUserId], references: [id])
+  bookedByUserId  Int             // The person who made/paid for the booking (group leader)
+  pond            Pond?           @relation(fields: [pondId], references: [id])
+  pondId          Int?
+  event           Event?          @relation(fields: [eventId], references: [id])
+  eventId         Int?
+  date            DateTime
+  timeSlot        TimeSlot?       @relation(fields: [timeSlotId], references: [id])
+  timeSlotId      Int?
+  seatsBooked     Int             @default(1) // Total number of seats booked
+  totalPrice      Float
+  status          String          @default("confirmed") // confirmed, cancelled, completed
+  createdAt       DateTime        @default(now())
+  
+  // Individual seat assignments
+  seatAssignments BookingSeat[]   // One-to-many: each seat can be assigned to a user
+  checkIns        CheckInRecord[]
+  catchRecords    CatchRecord[]
+}
+
+// New model for individual seat assignments within a booking
+model BookingSeat {
+  id            Int       @id @default(autoincrement())
+  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     Int
+  seatNumber    Int       // Seat number within this booking (1, 2, 3, etc.)
+  assignedUser  User?     @relation("AssignedSeats", fields: [assignedUserId], references: [id])
+  assignedUserId Int?     // Can be null if seat not yet assigned
+  assignedName  String?   // For guests not in system (optional)
+  assignedEmail String?   // For notification purposes (optional)
+  qrCode        String    @unique // Individual QR code for this seat
+  status        String    @default("assigned") // assigned, checked-in, no-show
+  checkedInAt   DateTime?
+  createdAt     DateTime  @default(now())
+  
+  // Relationships
+  checkInRecords CheckInRecord[] // One seat can have multiple check-in events
+  fishingRod     FishingRod?     // Assigned fishing rod
+  weighingRecords WeighingRecord[] // Weighing records for this seat
+  printSessions  RodPrintSession[] // Rod printing sessions for this seat
+  
+  @@unique([bookingId, seatNumber]) // Ensure unique seat numbers per booking
+}
+
+model TimeSlot {
+  id       Int       @id @default(autoincrement())
+  time     String    // e.g., "09:00-10:00"
+  label    String    // e.g., "Morning Session"
+  bookings Booking[]
+}
+
+model Game {
+  id              Int         @id @default(autoincrement())
+  name            String
+  type            GameType
+  targetWeight    Float?      // For TARGET_WEIGHT and EXACT_WEIGHT games
+  measurementUnit String      @default("kg") // kg, cm, etc.
+  decimalPlaces   Int         @default(2)
+  description     String?
+  isActive        Boolean     @default(true)
+  event           Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId         Int
+  prizes          Prize[]     // One-to-many with Prizes
+  catchRecords    CatchRecord[]
+  weighingRecords WeighingRecord[] // Weighing records for this game
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model Prize {
+  id          Int       @id @default(autoincrement())
+  name        String
+  type        PrizeType
+  value       Float     // Prize amount or item value
+  rankStart   Int       // Starting rank (e.g., 1 for 1st place)
+  rankEnd     Int       // Ending rank (e.g., 1 for 1st place only, 10 for ranks 4-10)
+  description String?
+  isActive    Boolean   @default(true)
+  game        Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId      Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// New model for fishing rod QR code management
+model FishingRod {
+  id            Int       @id @default(autoincrement())
+  qrCode        String    @unique // Current active QR code
+  serialNumber  String?   // Physical rod identifier (optional)
+  version       Int       @default(1) // Increment when reprinted (voids previous)
+  status        String    @default("active") // active, void, lost, damaged
+  
+  // Current assignment
+  bookingSeat   BookingSeat? @relation(fields: [bookingSeatId], references: [id])
+  bookingSeatId Int?      @unique // Currently assigned to which seat
+  assignedUser  User?     @relation(fields: [assignedUserId], references: [id])
+  assignedUserId Int?     // Currently assigned to which user
+  
+  // Rod lifecycle (self-service)
+  printedAt     DateTime  @default(now())
+  voidedAt      DateTime? // When this version was voided
+  voidReason    String?   // lost, damaged, reprinted
+  
+  // Previous versions (for audit trail)
+  previousQrCode String?  // QR code this replaced (when reprinting)
+  
+  // Self-service printing tracking
+  printStationId String?  // Which station/PC printed this
+  selfPrinted   Boolean   @default(true) // Self-printed vs staff-printed
+  
+  // Related records
+  catchRecords  CatchRecord[]
+  weighingRecords WeighingRecord[]
+  printSessions RodPrintSession[]
+  checkInRecords CheckInRecord[]   // Check-ins using this rod
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Model to track self-service rod printing sessions
+model RodPrintSession {
+  id              Int         @id @default(autoincrement())
+  
+  // Scanned check-in QR details
+  scannedQrCode   String      // The check-in QR that was scanned
+  bookingSeat     BookingSeat @relation(fields: [bookingSeatId], references: [id])
+  bookingSeatId   Int
+  user            User        @relation(fields: [userId], references: [id])
+  userId          Int
+  
+  // Session details
+  stationId       String      // Desktop scanner/PC identifier
+  ipAddress       String?     // IP of the printing station
+  sessionStatus   String      @default("pending") // pending, printed, cancelled, expired
+  
+  // Event validation
+  eventValid      Boolean     // Whether event is still valid/active
+  validationMessage String?   // Message for invalid sessions
+  
+  // Rod printing result
+  fishingRod      FishingRod? @relation(fields: [rodQrCode], references: [qrCode])
+  rodQrCode       String?     // Generated rod QR if printed
+  
+  createdAt       DateTime    @default(now())
+  printedAt       DateTime?   // When rod label was actually printed
+  expiresAt       DateTime    // Session expiry (e.g., 10 minutes)
+}
+
+// New model for weighing station records
+model WeighingRecord {
+  id            Int       @id @default(autoincrement())
+  
+  // Rod and user identification
+  fishingRod    FishingRod @relation(fields: [rodQrCode], references: [qrCode])
+  rodQrCode     String    // Scanned rod QR code
+  user          User      @relation(fields: [userId], references: [id])
+  userId        Int
+  bookingSeat   BookingSeat? @relation(fields: [bookingSeatId], references: [id])
+  bookingSeatId Int?      // Which seat this belongs to
+  
+  // Event and game context
+  event         Event     @relation(fields: [eventId], references: [id])
+  eventId       Int
+  game          Game      @relation(fields: [gameId], references: [id])
+  gameId        Int
+  
+  // Catch details
+  weight        Float     // Weight in kg (from digital scale)
+  length        Float?    // Length in cm (optional)
+  species       String?   // Fish species (optional)
+  
+  // Weighing process
+  weighedAt     DateTime  @default(now())
+  weighedBy     String    // Official who conducted weighing
+  scaleId       String?   // Digital scale identifier (if integrated)
+  isVerified    Boolean   @default(true) // Manual verification by official
+  
+  // Media and notes
+  photo         String?   // Photo of the catch
+  video         String?   // Video of weighing process
+  notes         String?   // Additional notes
+  
+  // Leaderboard impact
+  leaderboardUpdated Boolean @default(false) // Whether leaderboard was updated
+  rankAtTime    Int?      // Rank when this catch was recorded
+  
+  createdAt     DateTime  @default(now())
+}
+
+model CheckInRecord {
+  id           Int         @id @default(autoincrement())
+  booking      Booking     @relation(fields: [bookingId], references: [id])
+  bookingId    Int
+  bookingSeat  BookingSeat? @relation(fields: [bookingSeatId], references: [id])
+  bookingSeatId Int?       // Links to specific seat for event bookings
+  user         User        @relation(fields: [userId], references: [id])
+  userId       Int
+  fishingRod   FishingRod? @relation(fields: [rodQrCode], references: [qrCode])
+  rodQrCode    String?     // QR code of assigned fishing rod
+  checkInAt    DateTime
+  checkOutAt   DateTime?
+  scannedBy    String?     // Staff member who scanned
+  status       String      @default("checked-in") // checked-in, checked-out, no-show
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  type      String   // booking, event, maintenance, system, promotion
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  priority  String   @default("medium") // low, medium, high
+  actionUrl String?
+  createdAt DateTime @default(now())
+}
+
+model CatchRecord {
+  id           Int      @id @default(autoincrement())
+  booking      Booking  @relation(fields: [bookingId], references: [id])
+  bookingId    Int
+  user         User     @relation(fields: [userId], references: [id])
+  userId       Int
+  event        Event?   @relation(fields: [eventId], references: [id])
+  eventId      Int?
+  game         Game?    @relation(fields: [gameId], references: [id])
+  gameId       Int?
+  fishingRod   FishingRod? @relation(fields: [rodQrCode], references: [qrCode])
+  rodQrCode    String?  // QR code of fishing rod used
+  weight       Float?   // in kg
+  length       Float?   // in cm
+  species      String?
+  photo        String?
+  isVerified   Boolean  @default(false)
+  recordedBy   String   // Manager/Admin who recorded
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model LeaderboardEntry {
+  id                 Int               @id @default(autoincrement())
+  event              Event             @relation(fields: [eventId], references: [id])
+  eventId            Int
+  user               User              @relation(fields: [userId], references: [id])
+  userId             Int
+  gameId             Int?              // Which game this entry is for
+  value              Float             // The measurement value (weight, etc.)
+  rank               Int
+  points             Int               @default(0) // Competition points
+  eventLeaderboard   EventLeaderboard? @relation(fields: [eventLeaderboardId], references: [id])
+  eventLeaderboardId Int?
+  
+  @@unique([eventId, userId, gameId]) // One entry per user per game per event
+}
+
+model EventLeaderboard {
+  id       Int                @id @default(autoincrement())
+  event    Event              @relation(fields: [eventId], references: [id])
+  eventId  Int
+  gameId   Int?               // Specific game leaderboard
+  entries  LeaderboardEntry[]
+  lastUpdated DateTime        @default(now())
+  
+  @@unique([eventId, gameId]) // One leaderboard per game per event
+}

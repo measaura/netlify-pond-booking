@@ -1,5 +1,15 @@
 // Base interfaces for core data
 
+export interface User {
+  id: number
+  name: string
+  email: string
+  password: string
+  role: 'user' | 'manager' | 'admin'
+  isActive: boolean
+  createdAt: string
+}
+
 export interface BookingData {
   bookingId: string
   type: 'pond' | 'event'
@@ -43,13 +53,18 @@ export interface BookingData {
 export interface Pond {
   id: number
   name: string
+  // Primary numeric capacity value used across the UI. Many UI components still
+  // reference `capacity`, so keep it required for compatibility. The database
+  // schema uses `maxCapacity`, which is kept as an optional alias here.
   capacity: number
+  maxCapacity?: number // Maximum seating capacity (renamed from capacity)
+  // Current availability snapshot (optional, computed server-side)
+  available?: number
   price: number
   image: string
-  available: number // Dynamic availability count
   bookingEnabled: boolean // Whether booking is currently allowed
   shape: 'rectangle' | 'square' | 'circle'
-  seatingArrangement: number[] // [top, right, bottom, left] for rectangle/square, [total] for circle
+  seatingArrangement: any // JSON field - can be array or object
 }
 
 export interface TimeSlot {
