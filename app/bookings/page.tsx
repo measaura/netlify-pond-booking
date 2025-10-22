@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
 import { fetchCurrentUserFromSession } from '@/lib/api'
 import type { BookingData } from '@/types'
+import { useToastSafe } from '@/components/ui/toast'
 
 interface Booking {
   bookingId: string
@@ -179,6 +180,7 @@ function BookingsContent() {
   const { user } = useAuth()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
+  const toast = useToastSafe()
   
   const isManager = user?.role === 'manager' || user?.role === 'admin'
 
@@ -287,16 +289,16 @@ function BookingsContent() {
             await loadBookings()
           } else {
             const j = await res.json().catch(() => ({}))
-            alert(j.error || 'Failed to delete booking. Please try again.')
+            toast ? toast.push({ message: j.error || 'Failed to delete booking. Please try again.', variant: 'error' }) : window.alert(j.error || 'Failed to delete booking. Please try again.')
           }
         })
         .catch((err) => {
           console.error('Error deleting booking:', err)
-          alert('Error deleting booking. Please try again.')
+          toast ? toast.push({ message: 'Error deleting booking. Please try again.', variant: 'error' }) : window.alert('Error deleting booking. Please try again.')
         })
     } catch (error) {
       console.error('Error deleting booking:', error)
-      alert('Error deleting booking. Please try again.')
+      toast ? toast.push({ message: 'Error deleting booking. Please try again.', variant: 'error' }) : window.alert('Error deleting booking. Please try again.')
     }
   }
 

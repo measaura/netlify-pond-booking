@@ -10,6 +10,7 @@ import { ArrowLeft, Fish, Plus, Edit, Trash2, Power, RefreshCw, Users, DollarSig
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
+import { useToastSafe } from '@/components/ui/toast'
 // server-backed API calls
 async function fetchPonds() {
   const res = await fetch('/api/admin/ponds')
@@ -47,6 +48,7 @@ export default function PondsManagementPage() {
   const [ponds, setPonds] = useState<(Pond & { totalBookings: number; currentOccupancy: number; revenue: number })[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const toast = useToastSafe()
   
   // Dialog state
   const [isPondDialogOpen, setIsPondDialogOpen] = useState(false)
@@ -162,8 +164,8 @@ export default function PondsManagementPage() {
           shape: pondFormData.shape.toUpperCase(),
           bookingEnabled: pondFormData.bookingEnabled,
         })
-        if (resp.ok) alert('Pond updated successfully!')
-        else alert('Failed to update pond: ' + resp.error)
+        if (resp.ok) toast ? toast.push({ message: 'Pond updated successfully!', variant: 'success' }) : window.alert('Pond updated successfully!')
+        else toast ? toast.push({ message: 'Failed to update pond: ' + resp.error, variant: 'error' }) : window.alert('Failed to update pond: ' + resp.error)
       } else {
         const resp = await createPondApi({
           name: pondFormData.name,
@@ -173,8 +175,8 @@ export default function PondsManagementPage() {
           shape: pondFormData.shape.toUpperCase(),
           bookingEnabled: pondFormData.bookingEnabled,
         })
-        if (resp.ok) alert('Pond created successfully!')
-        else alert('Failed to create pond: ' + resp.error)
+        if (resp.ok) toast ? toast.push({ message: 'Pond created successfully!', variant: 'success' }) : window.alert('Pond created successfully!')
+        else toast ? toast.push({ message: 'Failed to create pond: ' + resp.error, variant: 'error' }) : window.alert('Failed to create pond: ' + resp.error)
       }
       
       setIsPondDialogOpen(false)
@@ -183,7 +185,7 @@ export default function PondsManagementPage() {
       loadData()
     } catch (error) {
       console.error('Error saving pond:', error)
-      alert('Error saving pond. Please try again.')
+      toast ? toast.push({ message: 'Error saving pond. Please try again.', variant: 'error' }) : window.alert('Error saving pond. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -195,14 +197,14 @@ export default function PondsManagementPage() {
       try {
         const result = await deletePondApi(pondId)
         if (result.ok) {
-          alert('Pond deleted successfully!')
+          toast ? toast.push({ message: 'Pond deleted successfully!', variant: 'success' }) : window.alert('Pond deleted successfully!')
           loadData()
         } else {
-          alert(result.error || 'Failed to delete pond.')
+          toast ? toast.push({ message: result.error || 'Failed to delete pond.', variant: 'error' }) : window.alert(result.error || 'Failed to delete pond.')
         }
       } catch (error) {
         console.error('Error deleting pond:', error)
-        alert('Error deleting pond. Please try again.')
+        toast ? toast.push({ message: 'Error deleting pond. Please try again.', variant: 'error' }) : window.alert('Error deleting pond. Please try again.')
       } finally {
         setIsLoading(false)
       }
@@ -217,10 +219,10 @@ export default function PondsManagementPage() {
       if (!pond) throw new Error('Pond not found')
       const resp = await updatePondApi(pondId, { bookingEnabled: !pond.bookingEnabled })
       if (resp.ok) loadData()
-      else alert('Failed to toggle pond booking status: ' + resp.error)
+      else toast ? toast.push({ message: 'Failed to toggle pond booking status: ' + resp.error, variant: 'error' }) : window.alert('Failed to toggle pond booking status: ' + resp.error)
     } catch (error) {
       console.error('Error toggling pond booking:', error)
-      alert('Error updating pond status. Please try again.')
+      toast ? toast.push({ message: 'Error updating pond status. Please try again.', variant: 'error' }) : window.alert('Error updating pond status. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -230,10 +232,10 @@ export default function PondsManagementPage() {
     if (confirm(`Are you sure you want to cancel ALL bookings for "${pondName}"? This action cannot be undone and will affect all users with bookings.`)) {
       setIsLoading(true)
       try {
-        alert('Cancel all bookings is not implemented on server yet.')
+        toast ? toast.push({ message: 'Cancel all bookings is not implemented on server yet.', variant: 'info' }) : window.alert('Cancel all bookings is not implemented on server yet.')
       } catch (error) {
         console.error('Error canceling bookings:', error)
-        alert('Error canceling bookings. Please try again.')
+        toast ? toast.push({ message: 'Error canceling bookings. Please try again.', variant: 'error' }) : window.alert('Error canceling bookings. Please try again.')
       } finally {
         setIsLoading(false)
       }

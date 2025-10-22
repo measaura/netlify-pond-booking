@@ -9,6 +9,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { formatEventTimeRange } from "@/lib/localStorage"
 import { useAuth } from '@/lib/auth'
+import { useToastSafe } from '@/components/ui/toast'
 
 // Generate seats based on pond shape and seating arrangement for events
 const generateEventSeats = (pond: any, eventId: number, eventDate: string, eventOccupied: number[] | null = null) => {
@@ -128,6 +129,7 @@ export default function EventBookingPage() {
   const router = useRouter()
   const { user } = useAuth()
   const eventId = parseInt(params.eventId as string)
+  const toast = useToastSafe()
   
   // Load event data dynamically
   const [event, setEvent] = useState<any>(null)
@@ -210,20 +212,20 @@ export default function EventBookingPage() {
 
   const handlePayment = async () => {
     if (!selectedSeat) {
-      alert('Please select a seat')
+      toast ? toast.push({ message: 'Please select a seat', variant: 'error' }) : window.alert('Please select a seat')
       return
     }
 
     if (!user) {
       console.error('User not authenticated!')
-      alert('Please log in to make a booking')
+      toast ? toast.push({ message: 'Please log in to make a booking', variant: 'error' }) : window.alert('Please log in to make a booking')
       router.push('/login')
       return
     }
 
     const selectedSeatData = seats.find(s => s.id === selectedSeat)
     if (!selectedSeatData) {
-      alert('Selected seat not found')
+      toast ? toast.push({ message: 'Selected seat not found', variant: 'error' }) : window.alert('Selected seat not found')
       return
     }
 
@@ -247,13 +249,13 @@ export default function EventBookingPage() {
       if (!res.ok) {
         const text = await res.text()
         console.error('Booking API error:', text)
-        alert('Failed to create booking')
+        toast ? toast.push({ message: 'Failed to create booking', variant: 'error' }) : window.alert('Failed to create booking')
         return
       }
       const json = await res.json()
       const bookingId = json.bookingId || json.id || json.booking?.id
       if (!bookingId) {
-        alert('Booking created but no id returned')
+        toast ? toast.push({ message: 'Booking created but no id returned', variant: 'error' }) : window.alert('Booking created but no id returned')
         return
       }
       // Refresh seats and navigate
@@ -261,7 +263,7 @@ export default function EventBookingPage() {
       router.push(`/ticket?booking=${bookingId}`)
     } catch (err) {
       console.error('Failed to save event booking', err)
-      alert('Failed to create booking')
+      toast ? toast.push({ message: 'Failed to create booking', variant: 'error' }) : window.alert('Failed to create booking')
     }
   }
 
