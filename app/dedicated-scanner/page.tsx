@@ -12,6 +12,7 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/lib/auth"
 import { ManagerNavigation } from '@/components/ManagerNavigation'
+import { useToastSafe } from '@/components/ui/toast'
 import { 
   validateQRCode, 
   validateQRCodeForCheckout,
@@ -45,6 +46,7 @@ interface ScanResult {
 
 export default function DedicatedScannerPage() {
   const { user } = useAuth()
+  const toast = useToastSafe()
   const qrScannerRef = useRef<Html5QrcodeScanner | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [activeTab, setActiveTab] = useState<'checkin' | 'checkout' | 'catch'>('checkin')
@@ -158,11 +160,20 @@ export default function DedicatedScannerPage() {
       const errorMsg = (err as Error).message || String(err)
       
       if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
-        alert('Camera permission denied. Please allow camera access and try again.')
+        toast ? toast.push({ 
+          message: 'Camera permission denied. Please allow camera access and try again.', 
+          variant: 'error' 
+        }) : window.alert('Camera permission denied. Please allow camera access and try again.')
       } else if (errorMsg.includes('NotFoundError')) {
-        alert('No camera found. Please ensure your device has a working camera.')
+        toast ? toast.push({ 
+          message: 'No camera found. Please ensure your device has a working camera.', 
+          variant: 'error' 
+        }) : window.alert('No camera found. Please ensure your device has a working camera.')
       } else {
-        alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
+        toast ? toast.push({ 
+          message: `Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`, 
+          variant: 'error' 
+        }) : window.alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
       }
     }
   }
@@ -346,11 +357,17 @@ export default function DedicatedScannerPage() {
       setNotes('')
       setIsProcessing(false)
 
-      alert(`✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
+      toast ? toast.push({ 
+        message: `✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`, 
+        variant: 'success' 
+      }) : window.alert(`✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
 
     } catch (error) {
       console.error('Check-in error:', error)
-      alert('❌ Check-in failed. Please try again.')
+      toast ? toast.push({ 
+        message: '❌ Check-in failed. Please try again.', 
+        variant: 'error' 
+      }) : window.alert('❌ Check-in failed. Please try again.')
       setIsProcessing(false)
     }
   }
@@ -370,14 +387,20 @@ export default function DedicatedScannerPage() {
         setCheckOutDialog({ open: false })
         setIsProcessing(false)
 
-        alert(`✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
+        toast ? toast.push({ 
+          message: `✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`, 
+          variant: 'success' 
+        }) : window.alert(`✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: { id: number; row: string; number: number }) => s.number).join(', ')}`)
       } else {
         throw new Error('Check-out operation failed')
       }
 
     } catch (error) {
       console.error('Check-out error:', error)
-      alert('❌ Check-out failed. Please try again.')
+      toast ? toast.push({ 
+        message: '❌ Check-out failed. Please try again.', 
+        variant: 'error' 
+      }) : window.alert('❌ Check-out failed. Please try again.')
       setIsProcessing(false)
     }
   }
@@ -398,17 +421,26 @@ export default function DedicatedScannerPage() {
       const length = parseFloat(catchData.length)
 
       if (isNaN(weight) || weight <= 0) {
-        alert('Please enter a valid weight')
+        toast ? toast.push({ 
+          message: 'Please enter a valid weight', 
+          variant: 'error' 
+        }) : window.alert('Please enter a valid weight')
         return
       }
 
       if (isNaN(length) || length <= 0) {
-        alert('Please enter a valid length')
+        toast ? toast.push({ 
+          message: 'Please enter a valid length', 
+          variant: 'error' 
+        }) : window.alert('Please enter a valid length')
         return
       }
 
       if (!catchData.species.trim()) {
-        alert('Please enter the fish species')
+        toast ? toast.push({ 
+          message: 'Please enter the fish species', 
+          variant: 'error' 
+        }) : window.alert('Please enter the fish species')
         return
       }
 
@@ -442,14 +474,20 @@ export default function DedicatedScannerPage() {
         setCatchData({ weight: '', length: '', species: '', notes: '' })
         setIsProcessing(false)
 
-        alert(`🐟 Catch recorded successfully!\nSpecies: ${catchData.species}\nWeight: ${weight}kg\nLength: ${length}cm`)
+        toast ? toast.push({ 
+          message: `🐟 Catch recorded successfully!\nSpecies: ${catchData.species}\nWeight: ${weight}kg\nLength: ${length}cm`, 
+          variant: 'success' 
+        }) : window.alert(`🐟 Catch recorded successfully!\nSpecies: ${catchData.species}\nWeight: ${weight}kg\nLength: ${length}cm`)
       } else {
         throw new Error('Catch recording failed')
       }
 
     } catch (error) {
       console.error('Catch recording error:', error)
-      alert('❌ Failed to record catch. Please try again.')
+      toast ? toast.push({ 
+        message: '❌ Failed to record catch. Please try again.', 
+        variant: 'error' 
+      }) : window.alert('❌ Failed to record catch. Please try again.')
       setIsProcessing(false)
     }
   }

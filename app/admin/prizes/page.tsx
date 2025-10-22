@@ -10,6 +10,7 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { Prize } from '@/types'
+import { useToastSafe } from '@/components/ui/toast'
 const API_BASE = '/api/admin/prizes'
 
 interface PrizeFormData {
@@ -23,6 +24,7 @@ interface PrizeFormData {
 }
 
 export default function PrizesManagementPage() {
+  const toast = useToastSafe()
   const [prizes, setPrizes] = useState<Prize[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -84,7 +86,10 @@ export default function PrizesManagementPage() {
             resetForm()
           } else throw new Error(json.error || 'Failed to update prize')
         } catch (error) {
-          alert(error instanceof Error ? error.message : 'Failed to update prize')
+          toast ? toast.push({ 
+            message: error instanceof Error ? error.message : 'Failed to update prize', 
+            variant: 'error' 
+          }) : window.alert(error instanceof Error ? error.message : 'Failed to update prize')
         }
       } else {
         // Add new prize
@@ -97,7 +102,10 @@ export default function PrizesManagementPage() {
             resetForm()
           } else throw new Error(json.error || 'Failed to add prize')
         } catch (error) {
-          alert(error instanceof Error ? error.message : 'Failed to add prize')
+          toast ? toast.push({ 
+            message: error instanceof Error ? error.message : 'Failed to add prize', 
+            variant: 'error' 
+          }) : window.alert(error instanceof Error ? error.message : 'Failed to add prize')
         }
       }
     } catch (error) {
@@ -181,7 +189,10 @@ export default function PrizesManagementPage() {
                               if (json.ok) loadData()
                               else throw new Error(json.error || 'Failed to delete prize')
                             } catch (error) {
-                              alert(error instanceof Error ? error.message : 'Failed to delete prize')
+                              toast ? toast.push({ 
+                                message: error instanceof Error ? error.message : 'Failed to delete prize', 
+                                variant: 'error' 
+                              }) : window.alert(error instanceof Error ? error.message : 'Failed to delete prize')
                             }
                           }
                         }}

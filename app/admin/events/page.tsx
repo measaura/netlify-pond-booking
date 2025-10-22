@@ -22,6 +22,7 @@ import {
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
+import { useToastSafe } from '@/components/ui/toast'
 import { 
   Event, 
   Game, 
@@ -105,6 +106,7 @@ interface EventFormData {
 }
 
 export default function EventsManagementPage() {
+  const toast = useToastSafe()
   const [events, setEvents] = useState<(Event & {
     participants: number;
     revenue: number;
@@ -226,12 +228,18 @@ const handleEventSubmit = async (e: React.FormEvent) => {
 
     if (editingEvent) {
       const resp = await updateEventApi(editingEvent.id, finalEventData)
-      if (resp.ok) alert('Event updated successfully!')
-      else alert('Failed to update event: ' + resp.error)
+      if (resp.ok) {
+        toast ? toast.push({ message: 'Event updated successfully!', variant: 'success' }) : window.alert('Event updated successfully!')
+      } else {
+        toast ? toast.push({ message: 'Failed to update event: ' + resp.error, variant: 'error' }) : window.alert('Failed to update event: ' + resp.error)
+      }
     } else {
       const resp = await createEventApi(finalEventData)
-      if (resp.ok) alert('Event created successfully!')
-      else alert('Failed to create event: ' + resp.error)
+      if (resp.ok) {
+        toast ? toast.push({ message: 'Event created successfully!', variant: 'success' }) : window.alert('Event created successfully!')
+      } else {
+        toast ? toast.push({ message: 'Failed to create event: ' + resp.error, variant: 'error' }) : window.alert('Failed to create event: ' + resp.error)
+      }
     }
 
     setIsEventDialogOpen(false)
@@ -240,7 +248,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     loadData()
   } catch (error) {
     console.error('Error saving event:', error)
-    alert('Failed to save event. Please try again.')
+    toast ? toast.push({ message: 'Failed to save event. Please try again.', variant: 'error' }) : window.alert('Failed to save event. Please try again.')
   } finally {
     setIsLoading(false)
   }
@@ -252,14 +260,14 @@ const handleEventSubmit = async (e: React.FormEvent) => {
       try {
         const result = await deleteEventApi(eventId)
         if (result.ok) {
-          alert('Event deleted successfully!')
+          toast ? toast.push({ message: 'Event deleted successfully!', variant: 'success' }) : window.alert('Event deleted successfully!')
           loadData()
         } else {
-          alert(result.error || 'Failed to delete event.')
+          toast ? toast.push({ message: result.error || 'Failed to delete event.', variant: 'error' }) : window.alert(result.error || 'Failed to delete event.')
         }
       } catch (error) {
         console.error('Error deleting event:', error)
-        alert('Error deleting event. Please try again.')
+        toast ? toast.push({ message: 'Error deleting event. Please try again.', variant: 'error' }) : window.alert('Error deleting event. Please try again.')
       } finally {
         setIsLoading(false)
       }
@@ -273,11 +281,14 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     setIsLoading(true)
     try {
       const resp = await updateEventApi(eventId, { status: newStatus })
-      if (resp.ok) loadData()
-      else alert('Failed to update event status: ' + resp.error)
+      if (resp.ok) {
+        loadData()
+      } else {
+        toast ? toast.push({ message: 'Failed to update event status: ' + resp.error, variant: 'error' }) : window.alert('Failed to update event status: ' + resp.error)
+      }
     } catch (error) {
       console.error('Error updating event status:', error)
-      alert('Error updating event status. Please try again.')
+      toast ? toast.push({ message: 'Error updating event status. Please try again.', variant: 'error' }) : window.alert('Error updating event status. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -287,10 +298,10 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     if (confirm(`Cancel ALL bookings for "${eventName}"? This action cannot be undone.`)) {
       setIsLoading(true)
       try {
-        alert('Cancel all bookings is not implemented on server yet.')
+        toast ? toast.push({ message: 'Cancel all bookings is not implemented on server yet.', variant: 'info' }) : window.alert('Cancel all bookings is not implemented on server yet.')
       } catch (error) {
         console.error('Error canceling bookings:', error)
-        alert('Error canceling bookings. Please try again.')
+        toast ? toast.push({ message: 'Error canceling bookings. Please try again.', variant: 'error' }) : window.alert('Error canceling bookings. Please try again.')
       } finally {
         setIsLoading(false)
       }

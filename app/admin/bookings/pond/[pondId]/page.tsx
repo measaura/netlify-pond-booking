@@ -9,10 +9,12 @@ import { ArrowLeft, Fish, Users, Calendar, DollarSign, Clock, MapPin, Trash2, Re
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { useAuth } from '@/lib/auth'
+import { useToastSafe } from '@/components/ui/toast'
 import { } from '@/lib/localStorage'
 import type { Pond, BookingData } from '@/types'
 
 export default function AdminPondBookingsPage() {
+  const toast = useToastSafe()
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
@@ -54,7 +56,7 @@ export default function AdminPondBookingsPage() {
       await loadData()
     } catch (err) {
       console.error('Failed to delete booking', err)
-      alert('Failed to delete booking')
+      toast ? toast.push({ message: 'Failed to delete booking', variant: 'error' }) : window.alert('Failed to delete booking')
     }
   }
 

@@ -27,6 +27,7 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { useAuth } from "@/lib/auth"
 import { useRouter } from 'next/navigation'
+import { useToastSafe } from '@/components/ui/toast'
 
 const realtimeStats = {
   totalBookings: 127,
@@ -60,6 +61,7 @@ const recentActivity = [
 ]
 
 export default function AdminPage() {
+  const toast = useToastSafe()
   const [selectedParticipant, setSelectedParticipant] = useState<string>('')
   const [fishWeight, setFishWeight] = useState<string>('')
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false)
@@ -69,7 +71,10 @@ export default function AdminPage() {
   const handleWeightCapture = () => {
     if (selectedParticipant && fishWeight) {
       // In real app, would submit to backend
-      alert(`Recorded ${fishWeight}kg catch for ${selectedParticipant}`)
+      toast ? toast.push({ 
+        message: `Recorded ${fishWeight}kg catch for ${selectedParticipant}`, 
+        variant: 'success' 
+      }) : window.alert(`Recorded ${fishWeight}kg catch for ${selectedParticipant}`)
       setFishWeight('')
       setSelectedParticipant('')
       setIsWeightDialogOpen(false)
