@@ -51,31 +51,89 @@ async function main() {
 
   // 3. Seed users with proper roles
   console.log('Seeding users...')
-  // Create default admin user
+  // Create default admin user (matches login page demo)
   await prisma.user.upsert({
-    where: { email: 'admin@fishingpond.com' },
+    where: { email: 'admin@fishing.com' },
     update: {},
     create: {
-      email: 'admin@fishingpond.com',
-      name: 'System Admin',
-      password: 'admin123',
+      email: 'admin@fishing.com',
+      name: 'Super Admin',
+      password: '123456@$',
       role: UserRole.ADMIN,
     },
   })
 
-  // Create default manager user
+  // Create default manager user (matches login page demo)
   await prisma.user.upsert({
-    where: { email: 'manager@fishingpond.com' },
+    where: { email: 'manager1@fishing.com' },
     update: {},
     create: {
-      email: 'manager@fishingpond.com',
-      name: 'Pond Manager',
-      password: 'manager123',
+      email: 'manager1@fishing.com',
+      name: 'Pond Manager 1',
+      password: '123456@$',
       role: UserRole.MANAGER,
     },
   })
 
-  // Create some regular users
+  // Create additional manager users
+  await prisma.user.upsert({
+    where: { email: 'manager2@fishing.com' },
+    update: {},
+    create: {
+      email: 'manager2@fishing.com',
+      name: 'Pond Manager 2',
+      password: '123456@$',
+      role: UserRole.MANAGER,
+    },
+  })
+
+  await prisma.user.upsert({
+    where: { email: 'manager3@fishing.com' },
+    update: {},
+    create: {
+      email: 'manager3@fishing.com',
+      name: 'Pond Manager 3',
+      password: '123456@$',
+      role: UserRole.MANAGER,
+    },
+  })
+
+  // Create default user (matches login page demo)
+  await prisma.user.upsert({
+    where: { email: 'user1@fishing.com' },
+    update: {},
+    create: {
+      email: 'user1@fishing.com',
+      name: 'Test User 1',
+      password: '123456@$',
+      role: UserRole.USER,
+    },
+  })
+
+  // Create additional demo users
+  await prisma.user.upsert({
+    where: { email: 'user2@fishing.com' },
+    update: {},
+    create: {
+      email: 'user2@fishing.com',
+      name: 'Test User 2',
+      password: '123456@$',
+      role: UserRole.USER,
+    },
+  })
+
+  await prisma.user.upsert({
+    where: { email: 'user3@fishing.com' },
+    update: {},
+    create: {
+      email: 'user3@fishing.com',
+      name: 'Test User 3',
+      password: '123456@$',
+      role: UserRole.USER,
+    },
+  })
+
+  // Create additional regular users for testing
   const regularUsers = [
     { email: 'john@example.com', name: 'John Smith' },
     { email: 'jane@example.com', name: 'Jane Doe' },
@@ -91,7 +149,7 @@ async function main() {
       create: {
         email: userData.email,
         name: userData.name,
-        password: 'user123',
+        password: '123456@$',
         role: UserRole.USER,
       },
     })
@@ -345,9 +403,14 @@ async function main() {
   console.log('Database seed completed successfully!')
   console.log('Created:')
   console.log('- 4+ ponds with proper capacity and shape settings')
-  console.log('- 1 admin, 1 manager, 5 regular users')
+  console.log('- 1 admin, 3 managers, 3 demo users + 5 additional test users')
   console.log('- 2 events with multiple games and rank-based prizes')
   console.log('- Sample bookings for both pond and event types')
+  console.log('')
+  console.log('Demo Login Credentials (password: 123456@$):')
+  console.log('  Admin:     admin@fishing.com')
+  console.log('  Managers:  manager1@fishing.com, manager2@fishing.com, manager3@fishing.com')
+  console.log('  Users:     user1@fishing.com, user2@fishing.com, user3@fishing.com')
 }
 
 main()
