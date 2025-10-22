@@ -10,6 +10,7 @@ import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { Game, Prize } from '@/types'
+import { useToastSafe } from '@/components/ui/toast'
 // Client-side will call serverless admin routes under /api/admin
 const API_BASE = '/api/admin/games'
 
@@ -27,6 +28,7 @@ interface GameFormData {
 }
 
 export default function GamesManagementPage() {
+  const toast = useToastSafe()
   const [games, setGames] = useState<Game[]>([])
   const [prizes, setPrizes] = useState<Prize[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -54,7 +56,7 @@ export default function GamesManagementPage() {
         })
     } catch (error) {
       console.error('Error loading games:', error)
-      alert('Error loading games')
+      toast ? toast.push({ message: 'Error loading games', variant: 'error' }) : window.alert('Error loading games')
     } finally {
       setIsLoading(false)
     }
@@ -74,12 +76,12 @@ export default function GamesManagementPage() {
         const res = await fetch(API_BASE, { method: 'PUT', body: JSON.stringify({ id: editingGame.id, ...formData }), headers: { 'Content-Type': 'application/json' } })
         const json = await res.json()
         if (!json.ok) throw new Error(json.error || 'Failed to update game')
-        alert('Game updated successfully!')
+        toast ? toast.push({ message: 'Game updated successfully!', variant: 'success' }) : window.alert('Game updated successfully!')
       } else {
         const res = await fetch(API_BASE, { method: 'POST', body: JSON.stringify(formData), headers: { 'Content-Type': 'application/json' } })
         const json = await res.json()
         if (!json.ok) throw new Error(json.error || 'Failed to create game')
-        alert('Game created successfully!')
+        toast ? toast.push({ message: 'Game created successfully!', variant: 'success' }) : window.alert('Game created successfully!')
       }
 
       setIsDialogOpen(false)
@@ -87,7 +89,7 @@ export default function GamesManagementPage() {
       loadData()
     } catch (error) {
       console.error('Error saving game:', error)
-      alert('Error saving game. Please try again.')
+      toast ? toast.push({ message: 'Error saving game. Please try again.', variant: 'error' }) : window.alert('Error saving game. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -187,7 +189,10 @@ export default function GamesManagementPage() {
                               if (json.ok) loadData()
                               else throw new Error(json.error || 'Failed to delete game')
                             } catch (error) {
-                              alert(error instanceof Error ? error.message : 'Failed to delete game')
+                              toast ? toast.push({ 
+                                message: error instanceof Error ? error.message : 'Failed to delete game', 
+                                variant: 'error' 
+                              }) : window.alert(error instanceof Error ? error.message : 'Failed to delete game')
                             }
                           }
                         }}

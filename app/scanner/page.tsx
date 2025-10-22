@@ -191,22 +191,12 @@ export default function ScannerPage() {
       
       const errorMsg = (err as Error).message || String(err)
       
-      if (toast) {
-        if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
-          toast.push({ message: 'Camera permission denied. Please allow camera access and try again.', variant: 'error' })
-        } else if (errorMsg.includes('NotFoundError')) {
-          toast.push({ message: 'No camera found. Please ensure your device has a working camera.', variant: 'error' })
-        } else {
-          toast.push({ message: `Scanner error: ${errorMsg}\nPlease try refreshing the page.`, variant: 'error' })
-        }
+      if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
+        toast ? toast.push({ message: 'Camera permission denied. Please allow camera access and try again.', variant: 'error' }) : window.alert('Camera permission denied. Please allow camera access and try again.')
+      } else if (errorMsg.includes('NotFoundError')) {
+        toast ? toast.push({ message: 'No camera found. Please ensure your device has a working camera.', variant: 'error' }) : window.alert('No camera found. Please ensure your device has a working camera.')
       } else {
-        if (errorMsg.includes('Permission denied') || errorMsg.includes('NotAllowedError')) {
-          alert('Camera permission denied. Please allow camera access and try again.')
-        } else if (errorMsg.includes('NotFoundError')) {
-          alert('No camera found. Please ensure your device has a working camera.')
-        } else {
-          alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
-        }
+        toast ? toast.push({ message: `Scanner error: ${errorMsg}\nPlease try refreshing the page.`, variant: 'error' }) : window.alert(`Scanner error: ${errorMsg}\n\nPlease try refreshing the page.`)
       }
     }
   }
@@ -417,13 +407,11 @@ export default function ScannerPage() {
 
   // Show success message
   const checkInMsg = `✅ Check-in successful!\n${checkInDialog.booking.pond.name}\nSeats: ${checkInDialog.booking.seats.map((s: any) => s.number).join(', ')}`
-  if (toast) toast.push({ message: checkInMsg, variant: 'success', title: 'Check-in' })
-  else alert(checkInMsg)
+  toast ? toast.push({ message: checkInMsg, variant: 'success', title: 'Check-in' }) : window.alert(checkInMsg)
 
     } catch (error) {
       console.error('Check-in error:', error)
-  if (toast) toast.push({ message: '❌ Check-in failed. Please try again.', variant: 'error' })
-  else alert('❌ Check-in failed. Please try again.')
+  toast ? toast.push({ message: '❌ Check-in failed. Please try again.', variant: 'error' }) : window.alert('❌ Check-in failed. Please try again.')
       setIsProcessingCheckIn(false)
     }
   }
@@ -435,12 +423,10 @@ export default function ScannerPage() {
       const resp = await checkoutServer(Number(checkInId))
       if (!resp || !resp.ok) throw new Error(resp?.error || 'Check-out failed')
       await refreshData()
-  if (toast) toast.push({ message: '✅ Check-out successful!', variant: 'success' })
-  else alert('✅ Check-out successful!')
+  toast ? toast.push({ message: '✅ Check-out successful!', variant: 'success' }) : window.alert('✅ Check-out successful!')
     } catch (e) {
       console.error('Check-out error', e)
-  if (toast) toast.push({ message: '❌ Check-out failed.', variant: 'error' })
-  else alert('❌ Check-out failed.')
+  toast ? toast.push({ message: '❌ Check-out failed.', variant: 'error' }) : window.alert('❌ Check-out failed.')
     }
   }
 
@@ -465,13 +451,11 @@ export default function ScannerPage() {
       setIsProcessingCheckIn(false)
 
   const checkOutMsg = `✅ Check-out successful!\n${checkOutDialog.booking?.pond.name}\nSeats: ${checkOutDialog.booking?.seats?.map((s: any) => s.number).join(', ')}`
-  if (toast) toast.push({ message: checkOutMsg, variant: 'success', title: 'Check-out' })
-  else alert(checkOutMsg)
+  toast ? toast.push({ message: checkOutMsg, variant: 'success', title: 'Check-out' }) : window.alert(checkOutMsg)
 
     } catch (error) {
       console.error('Check-out error:', error)
-  if (toast) toast.push({ message: '❌ Check-out failed. Please try again.', variant: 'error' })
-  else alert('❌ Check-out failed. Please try again.')
+  toast ? toast.push({ message: '❌ Check-out failed. Please try again.', variant: 'error' }) : window.alert('❌ Check-out failed. Please try again.')
       setIsProcessingCheckIn(false)
     }
   }
@@ -482,12 +466,10 @@ export default function ScannerPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || 'Failed to mark no-show')
       await refreshData()
-  if (toast) toast.push({ message: 'Marked as no-show', variant: 'info' })
-  else alert('Marked as no-show')
+  toast ? toast.push({ message: 'Marked as no-show', variant: 'info' }) : window.alert('Marked as no-show')
     } catch (e) {
       console.error('Mark no-show failed', e)
-  if (toast) toast.push({ message: 'Failed to mark no-show', variant: 'error' })
-  else alert('Failed to mark no-show')
+  toast ? toast.push({ message: 'Failed to mark no-show', variant: 'error' }) : window.alert('Failed to mark no-show')
     }
   }
 
