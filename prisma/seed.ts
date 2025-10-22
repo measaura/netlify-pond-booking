@@ -97,41 +97,50 @@ async function main() {
     })
   }
 
-  // 4. Seed events
+  // 4. Seed events with dynamic dates
   console.log('Seeding events...')
-  const event1 = await prisma.event.upsert({
-    where: { id: 1 },
-    update: {},
-    create: {
+  const now = new Date()
+  const nextWeekend = new Date(now)
+  nextWeekend.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7) + 7) // Next Saturday
+  const nextMonth = new Date(now)
+  nextMonth.setMonth(now.getMonth() + 1)
+  nextMonth.setDate(1) // First day of next month
+  
+  // Clear existing events, games, prizes to allow fresh data
+  await prisma.prize.deleteMany({})
+  await prisma.game.deleteMany({})
+  await prisma.eventPond.deleteMany({})
+  await prisma.event.deleteMany({})
+  
+  const event1 = await prisma.event.create({
+    data: {
       id: 1,
       name: 'Weekend Fishing Championship',
       description: 'A competitive fishing event with multiple games',
-      date: new Date('2024-12-15'),
+      date: nextWeekend,
       startTime: '08:00',
       endTime: '17:00',
       maxParticipants: 50,
       maxSeatsPerBooking: 5,
       entryFee: 100.0,
-      bookingOpens: new Date('2024-12-01'),
-      status: 'upcoming',
+      bookingOpens: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), // Opened 1 week ago
+      status: 'open', // Changed to 'open' so users can book
     },
   })
 
-  const event2 = await prisma.event.upsert({
-    where: { id: 2 },
-    update: {},
-    create: {
+  const event2 = await prisma.event.create({
+    data: {
       id: 2,
       name: 'New Year Fishing Festival',
       description: 'Start the year with a great fishing competition',
-      date: new Date('2025-01-01'),
+      date: nextMonth,
       startTime: '06:00',
       endTime: '18:00',
       maxParticipants: 80,
       maxSeatsPerBooking: 3,
       entryFee: 150.0,
-      bookingOpens: new Date('2024-12-15'),
-      status: 'upcoming',
+      bookingOpens: now, // Opens today
+      status: 'open', // Changed to 'open' so users can book
     },
   })
 
@@ -267,11 +276,21 @@ async function main() {
     })
   }
 
-  // 8. Create some sample bookings
+  // 8. Create some sample bookings with dynamic dates
   console.log('Seeding sample bookings...')
   const users = await prisma.user.findMany({ where: { role: UserRole.USER } })
   
-  // Pond bookings
+  const tomorrow = new Date(now)
+  tomorrow.setDate(now.getDate() + 1)
+  const nextWeek = new Date(now)
+  nextWeek.setDate(now.getDate() + 7)
+  
+  // Clear existing data in correct order (foreign key constraints)
+  await prisma.catchRecord.deleteMany({})
+  await prisma.bookingSeat.deleteMany({})
+  await prisma.booking.deleteMany({})
+  
+  // Pond bookings for tomorrow (so ponds aren't fully booked today!)
   if (users.length > 0) {
     const pondBooking = await prisma.booking.create({
       data: {
@@ -279,7 +298,7 @@ async function main() {
         type: BookingType.POND,
         bookedByUserId: users[0].id, // Group leader who made the booking
         pondId: 1,
-        date: new Date('2024-12-10'),
+        date: tomorrow, // Changed to tomorrow instead of past date
         timeSlotId: 1,
         seatsBooked: 2,
         totalPrice: 60.0,
@@ -311,7 +330,7 @@ async function main() {
         bookedByUserId: users[1]?.id || users[0].id, // Group leader
         eventId: 1,
         pondId: 1,
-        date: new Date('2024-12-15'),
+        date: nextWeekend, // Use the event date
         seatsBooked: 3,
         totalPrice: 100.0,
       },
@@ -342,12 +361,52 @@ async function main() {
     })
   }
 
+  // 9. Add sample catch records for leaderboard testing
+  console.log('Seeding sample catch records...')
+  if (users.length > 0) {
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    
+    // First, get the pond booking we created
+    const sampleBooking = await prisma.booking.findFirst({
+      where: { type: BookingType.POND }
+    })
+    
+    if (sampleBooking) {
+      // Sample catches from various users
+      const sampleCatches = [
+        { userId: users[0].id, weight: 3.5, species: 'Bass' },
+        { userId: users[1]?.id || users[0].id, weight: 2.8, species: 'Trout' },
+        { userId: users[0].id, weight: 4.2, species: 'Catfish' },
+        { userId: users[2]?.id || users[0].id, weight: 1.9, species: 'Perch' },
+        { userId: users[1]?.id || users[0].id, weight: 5.1, species: 'Bass' },
+        { userId: users[3]?.id || users[0].id, weight: 2.3, species: 'Trout' },
+        { userId: users[0].id, weight: 3.9, species: 'Bass' },
+      ]
+
+      for (const catchData of sampleCatches) {
+        await prisma.catchRecord.create({
+          data: {
+            userId: catchData.userId,
+            bookingId: sampleBooking.id, // Link to booking instead of pond
+            species: catchData.species,
+            weight: catchData.weight,
+            isVerified: true,
+            recordedBy: 'System',
+            createdAt: yesterday,
+          },
+        })
+      }
+    }
+  }
+
   console.log('Database seed completed successfully!')
   console.log('Created:')
   console.log('- 4+ ponds with proper capacity and shape settings')
   console.log('- 1 admin, 1 manager, 5 regular users')
-  console.log('- 2 events with multiple games and rank-based prizes')
-  console.log('- Sample bookings for both pond and event types')
+  console.log('- 2 open events (bookable) with multiple games and rank-based prizes')
+  console.log('- Sample bookings for tomorrow (ponds available today!)')
+  console.log('- 7 sample catch records for leaderboard testing')
 }
 
 main()
