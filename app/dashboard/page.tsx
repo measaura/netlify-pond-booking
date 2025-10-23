@@ -15,30 +15,65 @@ import type { LeaderboardEntry, EventLeaderboard } from '@/types'
 
 function LeaderboardCard() {
   const { user } = useAuth()
+  const [dbUserId, setDbUserId] = useState<number | null>(null)
   const [userStats, setUserStats] = useState<LeaderboardEntry | null>(null)
   const [currentEventLeaderboard, setCurrentEventLeaderboard] = useState<EventLeaderboard | null>(null)
+  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [isEventToday, setIsEventToday] = useState(false)
 
   useEffect(() => {
     async function load() {
       if (!user) return
       try {
-        const resUser = await fetch(`/api/leaderboard/user?userId=${user.id}`)
+        // Get database user ID by email
+        const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+        const userJson = await userRes.json()
+        if (!userJson.ok || !userJson.data?.id) return
+        
+        const userId = userJson.data.id
+        setDbUserId(userId)
+        
+        const resUser = await fetch(`/api/leaderboard/user?userId=${userId}`)
         const jsonUser = await resUser.json()
         if (jsonUser.ok) setUserStats(jsonUser.data)
 
         // Fetch user's participated events and pick the most recent
         try {
-          const partRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+          const partRes = await fetch(`/api/user/participated-events?userId=${userId}`)
           const partJson = await partRes.json()
           if (partJson.ok && Array.isArray(partJson.data) && partJson.data.length > 0) {
             const currentEvent = partJson.data[0]
-            const evRes = await fetch(`/api/leaderboard/event?eventId=${currentEvent.id}`)
-            const evJson = await evRes.json()
-            if (evJson.ok) setCurrentEventLeaderboard(evJson.data)
+            
+            // Check if event is today
+            const eventDate = new Date(currentEvent.date)
+            const today = new Date()
+            const isSameDay = eventDate.getDate() === today.getDate() &&
+                             eventDate.getMonth() === today.getMonth() &&
+                             eventDate.getFullYear() === today.getFullYear()
+            setIsEventToday(isSameDay)
+            
+            // Only fetch event leaderboard if event is today
+            if (isSameDay) {
+              const evRes = await fetch(`/api/leaderboard/event?eventId=${currentEvent.id}`)
+              const evJson = await evRes.json()
+              if (evJson.ok) setCurrentEventLeaderboard(evJson.data)
+            }
           }
         } catch (e) {
           // noop - keep previous behavior (no leaderboard)
+        }
+
+        // Fetch overall leaderboard as fallback
+        try {
+          const overallRes = await fetch(`/api/leaderboard/overall`)
+          const overallJson = await overallRes.json()
+          if (overallJson.ok) {
+            const entries = Array.isArray(overallJson.data) ? overallJson.data : (overallJson.data?.entries || [])
+            setOverallLeaderboard(entries)
+          }
+        } catch (e) {
+          console.error('Error fetching overall leaderboard:', e)
         }
       } catch (error) {
         console.error('Error loading leaderboard:', error)
@@ -63,18 +98,18 @@ function LeaderboardCard() {
       <div className="p-4 border-b border-yellow-200">
         <h3 className="font-semibold text-gray-900 flex items-center gap-2">
           <Trophy className="h-5 w-5 text-yellow-600" />
-          {currentEventLeaderboard ? `${currentEventLeaderboard.eventName}` : 'Competition Leaderboard'}
+          {currentEventLeaderboard ? `${currentEventLeaderboard.eventName}` : 'Overall Leaderboard'}
         </h3>
       </div>
       <CardContent className="p-4">
         {/* User's Position */}
-  {userStats && currentEventLeaderboard ? (
+        {currentEventLeaderboard ? (
           <div className="bg-white rounded-lg p-3 mb-4 border border-yellow-200">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm text-gray-600">Your Position in Current Event</div>
                 {(() => {
-                  const userEntry = currentEventLeaderboard.entries.find(entry => entry.userId === user?.id)
+                  const userEntry = currentEventLeaderboard.entries.find(entry => entry.userId === dbUserId)
                   if (userEntry) {
                     return (
                       <>
@@ -96,7 +131,7 @@ function LeaderboardCard() {
               </div>
               <div className="text-right">
                 {(() => {
-                  const userEntry = currentEventLeaderboard.entries.find(entry => entry.userId === user?.id)
+                  const userEntry = currentEventLeaderboard.entries.find(entry => entry.userId === dbUserId)
                   if (userEntry) {
                     return (
                       <>
@@ -115,24 +150,72 @@ function LeaderboardCard() {
                 })()}
               </div>
             </div>
-            {userStats.competitionsWon > 0 && (
+            {userStats && userStats.competitionsWon > 0 && (
               <div className="mt-2 text-xs text-yellow-700 flex items-center gap-1">
                 <Award className="h-3 w-3" />
                 {userStats.competitionsWon} competition{userStats.competitionsWon === 1 ? '' : 's'} won!
               </div>
             )}
           </div>
+        ) : overallLeaderboard.length > 0 ? (
+          <div className="bg-white rounded-lg p-3 mb-4 border border-yellow-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-gray-600">Your Overall Ranking</div>
+                {(() => {
+                  const userEntry = overallLeaderboard.find(entry => entry.userId === dbUserId)
+                  if (userEntry) {
+                    return (
+                      <>
+                        <div className="font-bold text-lg text-gray-900">#{userEntry.rank}</div>
+                        <div className="text-xs text-gray-500">
+                          {userEntry.totalWeight.toFixed(1)}kg • {userEntry.totalFish} fish
+                        </div>
+                      </>
+                    )
+                  } else {
+                    return (
+                      <>
+                        <div className="font-bold text-lg text-gray-900">Not ranked yet</div>
+                        <div className="text-xs text-gray-500">Catch some fish to get ranked!</div>
+                      </>
+                    )
+                  }
+                })()}
+              </div>
+              <div className="text-right">
+                {(() => {
+                  const userEntry = overallLeaderboard.find(entry => entry.userId === dbUserId)
+                  if (userEntry) {
+                    return (
+                      <>
+                        <div className="text-2xl font-bold text-yellow-600">{userEntry.points}</div>
+                        <div className="text-xs text-gray-500">points</div>
+                      </>
+                    )
+                  } else {
+                    return (
+                      <>
+                        <div className="text-2xl font-bold text-gray-400">0</div>
+                        <div className="text-xs text-gray-500">points</div>
+                      </>
+                    )
+                  }
+                })()}
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="bg-white rounded-lg p-3 mb-4 border border-yellow-200 text-center">
-            <div className="text-sm text-gray-600 mb-1">Join an event to see your ranking!</div>
+            <div className="text-sm text-gray-600 mb-1">Start fishing to see rankings!</div>
             <Button size="sm" className="text-xs" asChild>
               <Link href="/book">Book Your First Session</Link>
             </Button>
           </div>
         )}
 
-        {/* Top 3 from Current Event */}
-        {currentEventLeaderboard && currentEventLeaderboard.entries.length > 0 && (
+        {/* Top 3 from Current Event or Overall */}
+        {currentEventLeaderboard && currentEventLeaderboard.entries.length > 0 ? (
           <div>
             <div className="text-sm font-medium text-gray-700 mb-2">Current Event Top Performers</div>
             <div className="space-y-2">
@@ -148,23 +231,52 @@ function LeaderboardCard() {
                   <div className="flex-1">
                     <div className="font-medium text-gray-900">
                       {entry.userName}
-                      {entry.userId === user?.id && <span className="text-blue-600"> (You)</span>}
+                      {entry.userId === dbUserId && <span className="text-blue-600"> (You)</span>}
                     </div>
                     <div className="text-xs text-gray-500">
                       {entry.totalWeight.toFixed(1)}kg • {entry.points} pts
                     </div>
                   </div>
-                  {entry.userId === user?.id && (
+                  {entry.userId === dbUserId && (
                     <Trophy className="h-4 w-4 text-blue-500" />
                   )}
                 </div>
               ))}
             </div>
           </div>
-        )}
+        ) : overallLeaderboard.length > 0 ? (
+          <div>
+            <div className="text-sm font-medium text-gray-700 mb-2">Top Anglers Overall</div>
+            <div className="space-y-2">
+              {overallLeaderboard.slice(0, 3).map((entry, index) => (
+                <div key={entry.userId} className="flex items-center gap-2 text-sm">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    index === 0 ? 'bg-yellow-500 text-white' :
+                    index === 1 ? 'bg-gray-400 text-white' :
+                    'bg-orange-600 text-white'
+                  }`}>
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">
+                      {entry.userName}
+                      {entry.userId === dbUserId && <span className="text-blue-600"> (You)</span>}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {entry.totalWeight.toFixed(1)}kg • {entry.totalFish} fish
+                    </div>
+                  </div>
+                  {entry.userId === dbUserId && (
+                    <Trophy className="h-4 w-4 text-blue-500" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <Button size="sm" variant="outline" className="w-full mt-3 text-xs" asChild>
-          <Link href="/manager/leaderboard">View Full Leaderboard</Link>
+          <Link href="/leaderboard">View Full Leaderboard</Link>
         </Button>
       </CardContent>
     </Card>

@@ -247,6 +247,36 @@ export async function getBookingById(id: number) {
   })
 }
 
+export async function getBookingByBookingId(bookingId: string) {
+  return await prisma.booking.findUnique({
+    where: { bookingId },
+    include: {
+      bookedBy: true,
+      pond: true,
+      event: {
+        include: {
+          games: {
+            include: {
+              prizes: true,
+            }
+          }
+        }
+      },
+      timeSlot: true,
+      seatAssignments: {
+        include: {
+          assignedUser: true,
+          fishingRod: true,
+          checkInRecords: true,
+          weighingRecords: true,
+        }
+      },
+      checkIns: true,
+      catchRecords: true,
+    }
+  })
+}
+
 export async function createBooking(bookingData: {
   bookingId: string
   type: BookingTypeType

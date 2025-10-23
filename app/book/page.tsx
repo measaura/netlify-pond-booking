@@ -263,7 +263,7 @@ function EventsTab() {
                         <h3 className="font-bold text-lg">{event.name}</h3>
                         <div className="flex items-center gap-1 text-purple-100 text-sm">
                           <MapPin className="h-3 w-3" />
-                          <span>{event.assignedPonds.join(', ')}</span>
+                          <span>{(event as any).pondNames?.join(', ') || event.assignedPonds.join(', ')}</span>
                         </div>
                       </div>
                     </div>

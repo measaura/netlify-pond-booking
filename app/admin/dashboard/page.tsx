@@ -8,14 +8,7 @@ import { ArrowLeft, Users, Fish, Calendar, DollarSign, AlertTriangle, TrendingUp
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
-import { useAuth, getAllUsers } from '@/lib/auth'
-import { 
-  getAllBookings,
-  getPonds,
-  getEvents,
-  getTodayCheckIns,
-  getCheckInStats
-} from '@/lib/localStorage'
+import { useAuth } from '@/lib/auth'
 import { getAvatarUrl, getAvatarFallbackColor, getInitials } from '@/lib/avatars'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
@@ -29,46 +22,68 @@ export default function AdminDashboardPage() {
     totalUsers: 0,
     pondsActive: 0,
     eventsActive: 0,
-    checkInsToday: 0
+    checkInsToday: 0,
+    totalPonds: 0,
+    totalEvents: 0
   })
   const [isLoading, setIsLoading] = useState(false)
 
-  const loadStats = () => {
+  const loadStats = async () => {
     setIsLoading(true)
     try {
-      const bookings = getAllBookings()
-      const ponds = getPonds()
-      const events = getEvents()
-      const users = getAllUsers()
-      const todayCheckIns = getTodayCheckIns()
-      const checkInStats = getCheckInStats()
+      // Fetch all bookings from admin endpoint
+      const bookingsRes = await fetch('/api/admin/bookings', { credentials: 'include' })
+      const bookingsText = await bookingsRes.text()
+      const bookingsJson = bookingsText ? JSON.parse(bookingsText) : { ok: false, data: [] }
+      const bookings = bookingsJson.ok && Array.isArray(bookingsJson.data) ? bookingsJson.data : []
+
+      // Fetch ponds from DB
+      const pondsRes = await fetch('/api/ponds')
+      const pondsText = await pondsRes.text()
+      const pondsJson = pondsText ? JSON.parse(pondsText) : { ok: false, data: [] }
+      const ponds = pondsJson.ok && Array.isArray(pondsJson.data) ? pondsJson.data : []
+
+      // Fetch events from DB
+      const eventsRes = await fetch('/api/events')
+      const eventsText = await eventsRes.text()
+      const eventsJson = eventsText ? JSON.parse(eventsText) : { ok: false, data: [] }
+      const events = eventsJson.ok && Array.isArray(eventsJson.data) ? eventsJson.data : []
+
+      // Note: /api/checkins only supports POST (check-in action), not GET (listing)
+      // For now, we'll set check-ins to empty array until a GET endpoint is created
+      const todayCheckIns: any[] = []
 
       // Calculate today's bookings
-      const today = new Date().toDateString()
-      const todayBookings = bookings.filter(booking => 
-        new Date(booking.date).toDateString() === today
+      const todayDate = new Date().toDateString()
+      const todayBookings = bookings.filter((booking: any) => 
+        new Date(booking.date).toDateString() === todayDate
       )
 
       // Calculate total revenue
-      const totalRevenue = bookings.reduce((sum, booking) => sum + booking.totalPrice, 0)
+      const totalRevenue = bookings.reduce((sum: number, booking: any) => sum + (booking.totalPrice || 0), 0)
 
       // Calculate active users (users with bookings in last 30 days)
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      const recentBookings = bookings.filter(booking => 
+      const recentBookings = bookings.filter((booking: any) => 
         new Date(booking.date) >= thirtyDaysAgo
       )
-      const activeUserIds = new Set(recentBookings.map(b => b.userId))
+      const activeUserIds = new Set(recentBookings.map((b: any) => b.bookedByUserId))
+
+      // Count total unique users from all bookings
+      const allUserIds = new Set(bookings.map((b: any) => b.bookedByUserId))
 
       setStats({
         totalBookings: bookings.length,
         todayBookings: todayBookings.length,
         totalRevenue,
         activeUsers: activeUserIds.size,
-        totalUsers: users.length,
-        pondsActive: ponds.filter(p => p.bookingEnabled).length,
-        eventsActive: events.filter(e => e.status === 'open').length,
-        checkInsToday: todayCheckIns.length
+        totalUsers: allUserIds.size,
+        pondsActive: ponds.filter((p: any) => p.bookingEnabled).length,
+        eventsActive: events.filter((e: any) => e.status === 'OPEN' || e.status === 'open').length,
+        checkInsToday: todayCheckIns.length,
+        totalPonds: ponds.length,
+        totalEvents: events.length
       })
     } catch (error) {
       console.error('Error loading admin stats:', error)
@@ -122,7 +137,7 @@ export default function AdminDashboardPage() {
             <Card className="border-green-200 bg-green-50">
               <CardContent className="p-4 text-center">
                 <Fish className="h-6 w-6 text-green-600 mx-auto mb-2" />
-                <div className="text-xl font-bold text-green-900">{stats.pondsActive}/{getPonds().length}</div>
+                <div className="text-xl font-bold text-green-900">{stats.pondsActive}/{stats.totalPonds}</div>
                 <div className="text-xs text-green-700">Ponds Active</div>
               </CardContent>
             </Card>

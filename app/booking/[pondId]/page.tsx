@@ -23,7 +23,7 @@ const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occ
   let seatId = 1
 
   // Ensure pond has shape and seatingArrangement (backward compatibility)
-  const shape = pond.shape || 'rectangle'
+  const shape = (pond.shape || 'rectangle').toLowerCase()
   const seatingArrangement = pond.seatingArrangement || [3, 3, 3, 3] // default arrangement
 
   if (shape === 'circle') {
@@ -50,7 +50,8 @@ const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occ
       seatId++
     }
   } else {
-    // Rectangle or square arrangement with proper grid cell positioning
+    // Rectangle or square arrangement - counter-clockwise from top-left
+    // Order: Top (left to right) → Left (top to bottom) → Bottom (left to right) → Right (bottom to top)
     const [topSeats, rightSeats, bottomSeats, leftSeats] = seatingArrangement
     
     // Create a grid: width = max(top, bottom) + 2, height = max(left, right) + 2
@@ -61,7 +62,7 @@ const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occ
     const cellWidth = 100 / gridWidth  // Each cell width as percentage
     const cellHeight = 100 / gridHeight  // Each cell height as percentage
     
-    // 1. Top row (skip corners) - row 0, columns 1 to gridWidth-2
+    // 1. Top row (left to right) - row 0, columns 1 to gridWidth-2
     for (let i = 0; i < topSeats; i++) {
       const isAlreadyBooked = bookedSeatIds.includes(seatId)
       const col = 1 + Math.floor(i * (gridWidth - 2) / topSeats)
@@ -76,25 +77,25 @@ const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occ
       seatId++
     }
 
-    // 2. Right side (skip corners) - column gridWidth-1, rows 1 to gridHeight-2
-    for (let i = 0; i < rightSeats; i++) {
+    // 2. Left side (top to bottom) - column 0, rows 1 to gridHeight-2
+    for (let i = 0; i < leftSeats; i++) {
       const isAlreadyBooked = bookedSeatIds.includes(seatId)
-      const row = 1 + Math.floor(i * (gridHeight - 2) / rightSeats)
+      const row = 1 + Math.floor(i * (gridHeight - 2) / leftSeats)
       seats.push({
         id: seatId,
         number: seatId,
-        position: 'right',
-        x: (gridWidth - 1) * cellWidth + cellWidth / 2,  // Center of rightmost column cell
+        position: 'left',
+        x: cellWidth / 2,  // Center of leftmost column cell
         y: row * cellHeight + cellHeight / 2,  // Center of grid cell
         status: isAlreadyBooked ? 'booked' : 'available'
       })
       seatId++
     }
 
-    // 3. Bottom row (skip corners, right to left) - row gridHeight-1, columns gridWidth-2 to 1
+    // 3. Bottom row (left to right) - row gridHeight-1, columns 1 to gridWidth-2
     for (let i = 0; i < bottomSeats; i++) {
       const isAlreadyBooked = bookedSeatIds.includes(seatId)
-      const col = (gridWidth - 2) - Math.floor(i * (gridWidth - 2) / bottomSeats)
+      const col = 1 + Math.floor(i * (gridWidth - 2) / bottomSeats)
       seats.push({
         id: seatId,
         number: seatId,
@@ -106,15 +107,15 @@ const generateSeats = (pond: Pond, selectedDate?: Date, timeSlotId?: number, occ
       seatId++
     }
 
-    // 4. Left side (skip corners, bottom to top) - column 0, rows gridHeight-2 to 1
-    for (let i = 0; i < leftSeats; i++) {
+    // 4. Right side (bottom to top) - column gridWidth-1, rows gridHeight-2 to 1
+    for (let i = 0; i < rightSeats; i++) {
       const isAlreadyBooked = bookedSeatIds.includes(seatId)
-      const row = (gridHeight - 2) - Math.floor(i * (gridHeight - 2) / leftSeats)
+      const row = (gridHeight - 2) - Math.floor(i * (gridHeight - 2) / rightSeats)
       seats.push({
         id: seatId,
         number: seatId,
-        position: 'left',
-        x: cellWidth / 2,  // Center of leftmost column cell
+        position: 'right',
+        x: (gridWidth - 1) * cellWidth + cellWidth / 2,  // Center of rightmost column cell
         y: row * cellHeight + cellHeight / 2,  // Center of grid cell
         status: isAlreadyBooked ? 'booked' : 'available'
       })
@@ -147,6 +148,20 @@ export default function BookingPage() {
     if (selectedDate && selectedTimeSlot && pond) {
       const occupied = occupiedMap[selectedTimeSlot] ?? []
       const newSeats = generateSeats(pond, selectedDate, selectedTimeSlot, occupied)
+      console.log('[Seat Generation]', {
+        pondName: pond.name,
+        shape: pond.shape,
+        seatingArrangement: pond.seatingArrangement,
+        totalSeats: newSeats.length,
+        sampleSeat: newSeats[0],
+        positions: {
+          top: newSeats.filter(s => s.position === 'top').length,
+          right: newSeats.filter(s => s.position === 'right').length,
+          bottom: newSeats.filter(s => s.position === 'bottom').length,
+          left: newSeats.filter(s => s.position === 'left').length,
+          circle: newSeats.filter(s => s.position === 'circle').length,
+        }
+      })
       setSeats(newSeats)
       setSelectedSeats([]) // Clear selected seats when date/time changes
     }
@@ -158,13 +173,15 @@ export default function BookingPage() {
       try {
         const pondsRes = await fetch('/api/ponds')
         const pondsJson = await pondsRes.json()
-        const pondData = pondsJson.find((p: any) => p.id === pondId) ?? null
+        const ponds = pondsJson.data || pondsJson
+        const pondData = ponds.find((p: any) => p.id === pondId) ?? null
 
         const slotsRes = await fetch('/api/timeSlots')
         const slotsJson = await slotsRes.json()
+        const slots = slotsJson.data || slotsJson
 
         setPond(pondData)
-        setTimeSlots(slotsJson || [])
+        setTimeSlots(slots || [])
       } catch (err) {
         console.error('Failed to load ponds/timeSlots', err)
       }
@@ -262,6 +279,23 @@ export default function BookingPage() {
       return
     }
 
+    // Fetch real database user ID from email
+    let dbUserId: number
+    try {
+      const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+      const userJson = await userRes.json()
+      if (!userJson.ok || !userJson.data?.id) {
+        toast ? toast.push({ message: 'Failed to verify user account', variant: 'error' }) : window.alert('Failed to verify user account')
+        return
+      }
+      dbUserId = userJson.data.id
+      console.log('Database user ID:', dbUserId)
+    } catch (err) {
+      console.error('Failed to fetch user:', err)
+      toast ? toast.push({ message: 'Failed to verify user account', variant: 'error' }) : window.alert('Failed to verify user account')
+      return
+    }
+
   // Get the selected time slot
   const selectedTimeSlotData = timeSlots.find(t => t.id === selectedTimeSlot)
     if (!selectedTimeSlotData) {
@@ -295,9 +329,11 @@ export default function BookingPage() {
       timeSlotId: selectedTimeSlotData.id,
       date: selectedDate.toISOString(),
       totalPrice: selectedSeats.length * pond.price,
-      bookedByUserId: user.id
+      bookedByUserId: dbUserId
     }
 
+    console.log('Creating pond booking with payload:', payload)
+    
     try {
       const res = await fetch('/api/bookings', {
         method: 'POST',
@@ -305,34 +341,44 @@ export default function BookingPage() {
         body: JSON.stringify(payload)
       })
 
+      console.log('Booking API response status:', res.status)
+
       if (!res.ok) {
         const errText = await res.text()
-        console.error('Booking API error:', errText)
-        toast ? toast.push({ message: 'Failed to create booking', variant: 'error' }) : window.alert('Failed to create booking')
+        console.error('Booking API error response:', errText)
+        toast ? toast.push({ message: `Failed to create booking: ${errText}`, variant: 'error' }) : window.alert(`Failed to create booking: ${errText}`)
         return
       }
 
       const json = await res.json()
-      const bookingId = json.bookingId || json.id || json.booking?.id
+      console.log('Booking API response:', json)
+      
+      const bookingData = json.data || json
+      const bookingId = bookingData.bookingId || bookingData.id || bookingData.booking?.id
+      
+      console.log('Extracted bookingId:', bookingId)
+      
       if (!bookingId) {
         console.error('No bookingId returned from server', json)
         toast ? toast.push({ message: 'Booking created but no id returned', variant: 'error' }) : window.alert('Booking created but no id returned')
         return
       }
 
+      console.log('Booking successful! Redirecting to ticket page...')
       router.push(`/ticket?booking=${bookingId}`)
-    } catch (err) {
-      console.error('Failed to save booking', err)
-      toast ? toast.push({ message: 'Failed to save booking', variant: 'error' }) : window.alert('Failed to save booking')
+    } catch (err: any) {
+      console.error('Failed to save booking:', err)
+      const errorMsg = err?.message || 'Unknown error'
+      toast ? toast.push({ message: `Failed to save booking: ${errorMsg}`, variant: 'error' }) : window.alert(`Failed to save booking: ${errorMsg}`)
     }
   }
 
   const totalPrice = selectedSeats.length * pond.price
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 to-green-50">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="max-w-md mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
             <Link href="/book">
@@ -356,7 +402,7 @@ export default function BookingPage() {
         </div>
       </div>
 
-      <div className="max-w-md mx-auto p-4">
+      <div className="max-w-md mx-auto p-4 flex-1 flex flex-col overflow-hidden">
         {/* Step Indicator */}
         <div className="flex items-center justify-center mb-6">
           <div className="flex items-center gap-2">
@@ -409,69 +455,76 @@ export default function BookingPage() {
 
         {/* Step 2: Time Selection */}
         {step === 'time' && (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Select Time Slot</CardTitle>
-                <p className="text-sm text-gray-600">
-                  Date: {selectedDate?.toLocaleDateString('en-GB')}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {timeSlots.map((slot) => {
-                  const isAvailable = checkTimeSlotAvailability(slot.id)
-                  const occupied = selectedDate ? (occupiedMap[slot.id] ?? []) : []
-                  const availableSeats = Math.max(0, pond.capacity - occupied.length)
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Scrollable Time Slots */}
+            <div className="flex-1 overflow-y-auto min-h-0 mb-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Select Time Slot</CardTitle>
+                  <p className="text-sm text-gray-600">
+                    Date: {selectedDate?.toLocaleDateString('en-GB')}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3 pb-6">
+                  {timeSlots.map((slot) => {
+                    const isAvailable = checkTimeSlotAvailability(slot.id)
+                    const occupied = selectedDate ? (occupiedMap[slot.id] ?? []) : []
+                    const availableSeats = Math.max(0, pond.capacity - occupied.length)
 
-                  return (
-                    <div
-                      key={slot.id}
-                      onClick={() => isAvailable && setSelectedTimeSlot(slot.id)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                        selectedTimeSlot === slot.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : isAvailable
-                          ? 'border-gray-200 hover:border-blue-300'
-                          : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{slot.time}</p>
-                          <p className="text-sm text-gray-600">{slot.label}</p>
+                    return (
+                      <div
+                        key={slot.id}
+                        onClick={() => isAvailable && setSelectedTimeSlot(slot.id)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                          selectedTimeSlot === slot.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : isAvailable
+                            ? 'border-gray-200 hover:border-blue-300'
+                            : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{slot.time}</p>
+                            <p className="text-sm text-gray-600">{slot.label}</p>
+                          </div>
+                          {isAvailable ? (
+                            <div className="text-green-600 text-sm">{availableSeats} available</div>
+                          ) : (
+                            <div className="text-red-600 text-sm">Full</div>
+                          )}
                         </div>
-                        {isAvailable ? (
-                          <div className="text-green-600 text-sm">{availableSeats} available</div>
-                        ) : (
-                          <div className="text-red-600 text-sm">Full</div>
-                        )}
                       </div>
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
+                    )
+                  })}
+                </CardContent>
+              </Card>
+            </div>
 
-            <Button 
-              onClick={handleNext} 
-              disabled={!selectedTimeSlot}
-              className="w-full h-12"
-            >
-              Continue to Seat Selection
-            </Button>
+            {/* Fixed Bottom Button */}
+            <div className="flex-shrink-0 pb-4">
+              <Button 
+                onClick={handleNext} 
+                disabled={!selectedTimeSlot}
+                className="w-full h-12"
+              >
+                Continue to Seat Selection
+              </Button>
+            </div>
           </div>
         )}
 
         {/* Step 3: Seat Selection */}
         {step === 'seats' && (
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-center">Choose Your Seats</CardTitle>
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Header Card - Fixed at top */}
+            <Card className="flex-shrink-0">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-center text-lg">Choose Your Seats</CardTitle>
                 <div className="text-center text-sm text-gray-600">
                   {selectedDate?.toLocaleDateString('en-GB')} • {timeSlots.find(t => t.id === selectedTimeSlot)?.time}
                 </div>
-                <div className="flex justify-center gap-4 text-xs">
+                <div className="flex justify-center gap-4 text-xs mt-2">
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 bg-green-500 rounded"></div>
                     <span>Available</span>
@@ -486,77 +539,164 @@ export default function BookingPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                {/* Pond Layout */}
-                <div className="relative w-full aspect-square max-w-sm mx-auto bg-blue-50 rounded-2xl mb-4">
-                  {/* Pond shape positioned based on layout type */}
-                  {pond.shape === 'circle' ? (
-                    // Circular pond - centered with fixed size
-                    <div className="absolute w-32 h-32 bg-blue-200 rounded-full flex items-center justify-center top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                      <Fish className="h-10 w-10 text-blue-600" />
-                    </div>
-                  ) : (
-                    // Rectangle/square pond - positioned in the inner grid area
-                    <div 
-                      className="absolute bg-blue-200 rounded-xl flex items-center justify-center"
-                      style={{
-                        // Position pond in the inner grid area (excluding seat rows/columns)
-                        left: `${100 / (Math.max(pond.seatingArrangement[0], pond.seatingArrangement[2]) + 2)}%`,
-                        top: `${100 / (Math.max(pond.seatingArrangement[1], pond.seatingArrangement[3]) + 2)}%`,
-                        right: `${100 / (Math.max(pond.seatingArrangement[0], pond.seatingArrangement[2]) + 2)}%`,
-                        bottom: `${100 / (Math.max(pond.seatingArrangement[1], pond.seatingArrangement[3]) + 2)}%`
-                      }}
-                    >
-                      <Fish className="h-10 w-10 text-blue-600" />
-                    </div>
-                  )}
-                  
-                  {/* Seats positioned around pond based on shape and arrangement */}
-                  {seats.map((seat) => (
-                    <button
-                      key={seat.id}
-                      onClick={() => handleSeatClick(seat.id, seat.status)}
-                      disabled={seat.status !== 'available'}
-                      style={{
-                        position: 'absolute',
-                        left: `${seat.x}%`,
-                        top: `${seat.y}%`,
-                        transform: `translate(-50%, -50%) ${seat.position === 'circle' ? `rotate(${seat.angle}rad)` : ''}`,
-                        transformOrigin: 'center'
-                      }}
-                      className={`w-8 h-8 ${seat.position === 'circle' ? 'rounded' : 'rounded'} text-xs font-bold transition-all ${
-                        selectedSeats.includes(seat.id)
-                          ? 'bg-blue-500 text-white scale-125 shadow-lg z-20 border-2 border-blue-700'
-                          : seat.status === 'available'
-                          ? 'bg-green-500 text-white hover:bg-green-600 hover:scale-110 z-10'
-                          : 'bg-gray-400 text-white cursor-not-allowed z-10'
-                      }`}
-                    >
-                      {seat.number}
-                    </button>
-                  ))}
-                </div>
-
-                {selectedSeats.length > 0 && (
-                  <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <p className="font-medium">Selected: {selectedSeats.length} seat(s)</p>
-                    <p className="text-lg font-bold text-blue-600">£{totalPrice}</p>
-                  </div>
-                )}
-              </CardContent>
             </Card>
 
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={handleBack} className="flex-1">
-                Back
-              </Button>
-              <Button 
-                onClick={handleNext} 
-                disabled={selectedSeats.length === 0}
-                className="flex-1"
-              >
-                Continue to Payment
-              </Button>
+            {/* Scrollable Seat Map */}
+            <div className="flex-1 overflow-y-auto my-4 min-h-0">
+              <Card>
+                <CardContent className="p-4">
+                  {pond.shape?.toLowerCase() === 'circle' ? (
+                    // Circular layout - simple grid of all seats
+                    <div className="space-y-4">
+                      <div className="text-center bg-blue-200 rounded-full w-24 h-24 mx-auto flex items-center justify-center mb-6">
+                        <Fish className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <div className="grid grid-cols-4 gap-3">
+                        {seats.map((seat) => (
+                          <button
+                            key={seat.id}
+                            onClick={() => handleSeatClick(seat.id, seat.status)}
+                            disabled={seat.status !== 'available'}
+                            className={`h-14 rounded-lg text-sm font-bold transition-all touch-manipulation ${
+                              selectedSeats.includes(seat.id)
+                                ? 'bg-blue-500 text-white shadow-lg border-2 border-blue-700'
+                                : seat.status === 'available'
+                                ? 'bg-green-500 text-white active:scale-95'
+                                : 'bg-gray-400 text-white cursor-not-allowed'
+                            }`}
+                          >
+                            {seat.number}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    // Rectangle layout - seats arranged around pond
+                    <div className="space-y-4">
+                      {/* Top row - horizontal */}
+                      {pond.seatingArrangement[0] > 0 && (
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {seats.filter(s => s.position === 'top').map((seat) => (
+                            <button
+                              key={seat.id}
+                              onClick={() => handleSeatClick(seat.id, seat.status)}
+                              disabled={seat.status !== 'available'}
+                              className={`w-12 h-12 rounded-lg text-xs font-bold transition-all touch-manipulation ${
+                                selectedSeats.includes(seat.id)
+                                  ? 'bg-blue-500 text-white shadow-lg border-2 border-blue-700'
+                                  : seat.status === 'available'
+                                  ? 'bg-green-500 text-white active:scale-95'
+                                  : 'bg-gray-400 text-white cursor-not-allowed'
+                              }`}
+                            >
+                              {seat.number}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Middle section: Left seats | Pond | Right seats */}
+                      <div className="flex gap-2 items-stretch">
+                        {/* Left seats - vertical column (seats 1-100, top to bottom) */}
+                        {pond.seatingArrangement[3] > 0 && (
+                          <div className="flex flex-col gap-2 flex-shrink-0">
+                            {seats.filter(s => s.position === 'left').sort((a, b) => a.number - b.number).map((seat) => (
+                              <button
+                                key={seat.id}
+                                onClick={() => handleSeatClick(seat.id, seat.status)}
+                                disabled={seat.status !== 'available'}
+                                className={`w-12 h-12 rounded-lg text-xs font-bold transition-all touch-manipulation ${
+                                  selectedSeats.includes(seat.id)
+                                    ? 'bg-blue-500 text-white shadow-lg border-2 border-blue-700'
+                                    : seat.status === 'available'
+                                    ? 'bg-green-500 text-white active:scale-95'
+                                    : 'bg-gray-400 text-white cursor-not-allowed'
+                                }`}
+                              >
+                                {seat.number}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Pond in center - height matches seats */}
+                        <div className="flex-1 bg-blue-200 rounded-xl flex items-center justify-center" style={{
+                          minHeight: '100%'
+                        }}>
+                          <Fish className="h-12 w-12 text-blue-600" />
+                        </div>
+
+                        {/* Right seats - vertical column (seats 101-200, bottom to top for counter-clockwise) */}
+                        {pond.seatingArrangement[1] > 0 && (
+                          <div className="flex flex-col-reverse gap-2 flex-shrink-0">
+                            {seats.filter(s => s.position === 'right').sort((a, b) => a.number - b.number).map((seat) => (
+                              <button
+                                key={seat.id}
+                                onClick={() => handleSeatClick(seat.id, seat.status)}
+                                disabled={seat.status !== 'available'}
+                                className={`w-12 h-12 rounded-lg text-xs font-bold transition-all touch-manipulation ${
+                                  selectedSeats.includes(seat.id)
+                                    ? 'bg-blue-500 text-white shadow-lg border-2 border-blue-700'
+                                    : seat.status === 'available'
+                                    ? 'bg-green-500 text-white active:scale-95'
+                                    : 'bg-gray-400 text-white cursor-not-allowed'
+                                }`}
+                              >
+                                {seat.number}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom row - horizontal */}
+                      {pond.seatingArrangement[2] > 0 && (
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {seats.filter(s => s.position === 'bottom').map((seat) => (
+                            <button
+                              key={seat.id}
+                              onClick={() => handleSeatClick(seat.id, seat.status)}
+                              disabled={seat.status !== 'available'}
+                              className={`w-12 h-12 rounded-lg text-xs font-bold transition-all touch-manipulation ${
+                                selectedSeats.includes(seat.id)
+                                  ? 'bg-blue-500 text-white shadow-lg border-2 border-blue-700'
+                                  : seat.status === 'available'
+                                  ? 'bg-green-500 text-white active:scale-95'
+                                  : 'bg-gray-400 text-white cursor-not-allowed'
+                              }`}
+                            >
+                              {seat.number}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Fixed Bottom Section */}
+            <div className="flex-shrink-0 space-y-3 pb-4">
+              {selectedSeats.length > 0 && (
+                <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="font-medium text-gray-700">Selected: {selectedSeats.length} seat(s)</p>
+                  <p className="text-xl font-bold text-blue-600">£{totalPrice}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handleBack} className="flex-1 h-12">
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleNext} 
+                  disabled={selectedSeats.length === 0}
+                  className="flex-1 h-12"
+                >
+                  Continue to Payment
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -186,25 +186,43 @@ function BookingsContent() {
 
   const loadBookings = async () => {
     try {
-      // Use server API to fetch bookings. Prefer deriving userId from session (user object).
-      const userIdParam = user?.id ? `userId=${encodeURIComponent(user.id)}` : ''
-      const allQuery = isManager ? '' : `?${userIdParam}`
-      const url = isManager ? '/api/bookings?userId=1' : `/api/bookings?${userIdParam}`
-      // If manager, fetch all bookings by calling a manager endpoint or passing no filter; here fallback to userId=1 for now
-  const res = await fetch(url)
-  const json = await res.json()
-  const allBookings: BookingData[] = Array.isArray(json.data) ? json.data : []
-
       if (!user && !isManager) {
         setBookings([])
         setLoading(false)
         return
       }
 
+      // Get database user ID by email
+      let dbUserId: number | null = null
+      if (user?.email) {
+        try {
+          const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+          const userJson = await userRes.json()
+          if (userJson.ok && userJson.data?.id) {
+            dbUserId = userJson.data.id
+          }
+        } catch (err) {
+          console.error('Failed to fetch database user ID:', err)
+        }
+      }
+
+      // Use server API to fetch bookings using database user ID
+      const url = isManager 
+        ? '/api/bookings' // Managers fetch all bookings (no userId filter)
+        : dbUserId 
+          ? `/api/bookings?userId=${dbUserId}` 
+          : '/api/bookings' // Fallback to all if no user ID
+      
+      const res = await fetch(url)
+      const json = await res.json()
+      const allBookings: BookingData[] = Array.isArray(json.data) ? json.data : []
+
       // Filter bookings based on user role
       const filteredBookings = isManager
         ? allBookings // Managers see all bookings
-        : allBookings.filter((booking: BookingData) => booking.userId === user?.id) // Users see only their bookings
+        : dbUserId 
+          ? allBookings.filter((booking: BookingData) => booking.userId === dbUserId) // Users see only their bookings
+          : [] // No bookings if no valid user ID
 
       console.log('Filtered bookings for user:', filteredBookings)
 

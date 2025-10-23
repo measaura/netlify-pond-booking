@@ -132,28 +132,81 @@ export const validatePassword = (password: string): { isValid: boolean, errors: 
 
 // Authentication functions
 export const login = async (username: string, password: string): Promise<boolean> => {
-  const users = initializeUsers()
-  const user = users.find((u: User) => u.email === username && u.password === password)
-  
-  if (user) {
-    // Store proper AuthState
-    const authState: AuthState = {
-      isAuthenticated: true,
-      user: user,
-      token: 'fake-jwt-token' // In a real app, this would be a proper JWT
+  try {
+    // Call the database login API
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: username, password }),
+      credentials: 'include' // Include cookies
+    })
+
+    const result = await response.json()
+    
+    if (result.ok && result.data) {
+      const userData = result.data
+      
+      // Fetch full user details to get name and role
+      const userResponse = await fetch(`/api/user?email=${encodeURIComponent(username)}`, {
+        credentials: 'include'
+      })
+      const userResult = await userResponse.json()
+      
+      let user: User
+      if (userResult.ok && userResult.data) {
+        user = {
+          id: userResult.data.id,
+          email: userResult.data.email,
+          name: userResult.data.name,
+          password: '', // Don't store password
+          role: userResult.data.role.toLowerCase(),
+          isActive: true,
+          createdAt: userResult.data.createdAt
+        }
+      } else {
+        // Fallback if user fetch fails
+        user = {
+          id: userData.userId,
+          email: userData.email,
+          name: username,
+          password: '',
+          role: 'user',
+          isActive: true,
+          createdAt: new Date().toISOString()
+        }
+      }
+      
+      // Store proper AuthState in localStorage
+      const authState: AuthState = {
+        isAuthenticated: true,
+        user: user,
+        token: 'session-cookie' // Using httpOnly session cookie
+      }
+      
+      localStorage.setItem('authState', JSON.stringify(authState))
+      
+      // Set additional cookies for compatibility
+      if (typeof document !== 'undefined') {
+        // Set userId cookie (simple numeric ID)
+        document.cookie = `userId=${user.id}; path=/; max-age=86400; SameSite=Lax`
+        
+        // Also set authState cookie for server compatibility
+        document.cookie = `authState=${encodeURIComponent(JSON.stringify(authState))}; path=/; max-age=86400; SameSite=Lax`
+      }
+      
+      // Dispatch custom event to notify other components
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('authStateChanged'))
+      }
+      
+      return true
     }
     
-    localStorage.setItem('authState', JSON.stringify(authState))
-    
-    // Dispatch custom event to notify other components
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('authStateChanged'))
-    }
-    
-    return true
+    return false
+  } catch (error) {
+    console.error('Login error:', error)
+    return false
   }
-  
-  return false
 }
 
 export const register = async (userData: {
@@ -199,6 +252,13 @@ export const register = async (userData: {
 
 export const logout = (): void => {
   localStorage.removeItem('authState')
+  
+  // Clear cookies
+  if (typeof document !== 'undefined') {
+    document.cookie = 'userId=; path=/; max-age=0; SameSite=Lax'
+    document.cookie = 'authState=; path=/; max-age=0; SameSite=Lax'
+    document.cookie = 'session=; path=/; max-age=0; SameSite=Lax'
+  }
   
   // Dispatch custom event to notify other components
   if (typeof window !== 'undefined') {

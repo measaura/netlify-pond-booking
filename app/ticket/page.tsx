@@ -12,12 +12,15 @@ import QRCode from 'qrcode'
 import type { BookingData as DatabaseBookingData } from "@/types"
 import { BottomNavigation } from '@/components/BottomNavigation'
 import { useToastSafe } from '@/components/ui/toast'
+import { formatDate, formatEventTime } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 
 function TicketContent() {
   const [bookingData, setBookingData] = useState<DatabaseBookingData | null>(null)
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const toast = useToastSafe()
   const searchParams = useSearchParams()
+  const { user } = useAuth()
   
   // Check if we're coming from bookings page (showing specific booking)
   const bookingId = searchParams.get('bookingId') || searchParams.get('booking')
@@ -41,10 +44,25 @@ function TicketContent() {
 
       if (!currentBooking) {
         try {
-          const res = await fetch('/api/bookings?userId=1') // temporary: fallback to user 1
-          const json = await res.json()
-          if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
-            currentBooking = json.data[0]
+          // Get current user from localStorage
+          const authState = localStorage.getItem('authState')
+          if (authState) {
+            const user = JSON.parse(authState)
+            
+            // Fetch database user ID by email
+            const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+            const userJson = await userRes.json()
+            
+            if (userJson.ok && userJson.data?.id) {
+              const dbUserId = userJson.data.id
+              
+              // Fetch bookings using database user ID
+              const res = await fetch(`/api/bookings?userId=${dbUserId}`)
+              const json = await res.json()
+              if (json && json.ok && Array.isArray(json.data) && json.data.length > 0) {
+                currentBooking = json.data[0]
+              }
+            }
           }
         } catch (err) {
           console.error('Failed to fetch recent bookings', err)
@@ -55,13 +73,15 @@ function TicketContent() {
         setBookingData(currentBooking)
 
         // Generate QR code with the booking data
-        if (currentBooking.pond && currentBooking.pond.name && currentBooking.seats && currentBooking.timeSlot) {
+        if (currentBooking.pond && currentBooking.pond.name && currentBooking.seats) {
           const qrData = JSON.stringify({
             bookingId: currentBooking.bookingId,
+            type: currentBooking.type,
             pond: currentBooking.pond.name,
             seats: currentBooking.seats.map(s => s.number.toString()),
             date: currentBooking.date,
-            timeSlot: currentBooking.timeSlot.time
+            timeSlot: currentBooking.timeSlot?.time || null,
+            event: currentBooking.type === 'event' ? currentBooking.event?.name : null
           })
 
           QRCode.toDataURL(qrData, {
@@ -75,6 +95,13 @@ function TicketContent() {
             setQrCodeUrl(url)
           }).catch(error => {
             console.error('Error generating QR code:', error)
+          })
+        } else {
+          console.error('Missing required booking data for QR code:', {
+            hasPond: !!currentBooking.pond,
+            hasPondName: !!currentBooking.pond?.name,
+            hasSeats: !!currentBooking.seats,
+            seatsCount: currentBooking.seats?.length
           })
         }
       }
@@ -191,8 +218,12 @@ function TicketContent() {
                     <span className="text-sm">Date & Time</span>
                   </div>
                   <div className="text-right">
-                    <div className="font-medium">{bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB') : 'Unknown date'}</div>
-                    <div className="text-sm text-gray-600">{bookingData.timeSlot?.time || 'Unknown time'}</div>
+                    <div className="font-medium">{bookingData.date ? formatDate(bookingData.date) : 'Unknown date'}</div>
+                    <div className="text-sm text-gray-600">
+                      {bookingData.type === 'event' && (bookingData.event as any)?.startTime && (bookingData.event as any)?.endTime
+                        ? formatEventTime((bookingData.event as any).startTime, (bookingData.event as any).endTime)
+                        : bookingData.timeSlot?.time || 'Unknown time'}
+                    </div>
                   </div>
                 </div>
 
@@ -245,7 +276,7 @@ function TicketContent() {
       try {
         await navigator.share({
           title: `Fishing Ticket - ${bookingData.pond.name || 'Unknown Pond'}`,
-          text: `My fishing reservation for ${bookingData.pond.name || 'Unknown Pond'} on ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB') : 'Unknown date'}`,
+          text: `My fishing reservation for ${bookingData.pond.name || 'Unknown Pond'} on ${bookingData.date ? formatDate(bookingData.date) : 'Unknown date'}`,
           url: window.location.href
         })
       } catch (err) {
@@ -290,9 +321,6 @@ function TicketContent() {
       <div className="max-w-md mx-auto p-4">
         {/* Success Message */}
         <div className="text-center py-6">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <QrCodeIcon className="h-8 w-8 text-green-600" />
-          </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
           <p className="text-gray-600">Your fishing spot has been reserved</p>
         </div>
@@ -396,8 +424,12 @@ function TicketContent() {
                   <span className="text-sm">Date & Time</span>
                 </div>
                 <div className="text-right">
-                  <div className="font-medium">{bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB') : 'Unknown date'}</div>
-                  <div className="text-sm text-gray-600">{bookingData.timeSlot?.time || 'Unknown time'}</div>
+                  <div className="font-medium">{bookingData.date ? formatDate(bookingData.date) : 'Unknown date'}</div>
+                  <div className="text-sm text-gray-600">
+                    {bookingData.type === 'event' && (bookingData.event as any)?.startTime && (bookingData.event as any)?.endTime
+                      ? formatEventTime((bookingData.event as any).startTime, (bookingData.event as any).endTime)
+                      : bookingData.timeSlot?.time || 'Unknown time'}
+                  </div>
                 </div>
               </div>
 
@@ -461,11 +493,13 @@ function TicketContent() {
 
         {/* Action Buttons */}
         <div className="mt-6 space-y-3">
-          <Link href="/scanner">
-            <Button variant="outline" className="w-full">
-              QR Scanner (Staff)
-            </Button>
-          </Link>
+          {(user?.role === 'manager' || user?.role === 'admin') && (
+            <Link href="/scanner">
+              <Button variant="outline" className="w-full">
+                QR Scanner (Staff)
+              </Button>
+            </Link>
+          )}
           <Link href="/">
             <Button className="w-full">
               Book Another Spot

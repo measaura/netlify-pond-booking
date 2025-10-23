@@ -140,22 +140,31 @@ function ManagerDashboard() {
     try {
       const pondsRes = await fetch('/api/ponds')
       const pondsJson = await pondsRes.json()
-      if (pondsJson.ok) setPonds(pondsJson.data)
+      if (pondsJson.ok && Array.isArray(pondsJson.data)) {
+        setPonds(pondsJson.data)
+      }
 
       // Fetch current check-ins (today) and stats from check-ins or bookings endpoints
       const occupiedRes = await fetch('/api/bookings/occupied?date=' + encodeURIComponent(new Date().toISOString().split('T')[0]))
       // occupied endpoint expects pondId or eventId; as a fallback, we fetch bookings
       const bookingsRes = await fetch('/api/bookings')
       const bookingsJson = await bookingsRes.json()
-      if (bookingsJson.ok) setTotalBookings(bookingsJson.data.length)
+      if (bookingsJson.ok && Array.isArray(bookingsJson.data)) {
+        setTotalBookings(bookingsJson.data.length)
+      }
 
       const leaderboardRes = await fetch('/api/leaderboard/overall')
       const lbJson = await leaderboardRes.json()
-      if (lbJson.ok) setLeaderboard(lbJson.data.entries ?? lbJson.data)
+      if (lbJson.ok) {
+        const entries = Array.isArray(lbJson.data) ? lbJson.data : (lbJson.data?.entries || [])
+        setLeaderboard(entries)
+      }
 
       const catchesRes = await fetch('/api/catches')
       const catchesJson = await catchesRes.json()
-      if (catchesJson.ok) setTotalCatches(catchesJson.data.length)
+      if (catchesJson.ok && Array.isArray(catchesJson.data)) {
+        setTotalCatches(catchesJson.data.length)
+      }
 
       setLastUpdated(new Date())
     } catch (err) {
@@ -167,7 +176,10 @@ function ManagerDashboard() {
     refreshData()
   }, [])
 
-  const getPondUsers = (pondId: number) => currentCheckIns.filter(checkIn => checkIn.pond?.id === pondId)
+  const getPondUsers = (pondId: number) => {
+    if (!currentCheckIns || !Array.isArray(currentCheckIns)) return []
+    return currentCheckIns.filter(checkIn => checkIn.pond?.id === pondId)
+  }
 
   // Recent activity (last 5 check-ins/check-outs)
   const recentActivity = currentCheckIns.slice(0, 5)
@@ -331,11 +343,12 @@ function ManagerDashboard() {
           
       {ponds.map((pond) => {
         // Compute a simple occupancy estimate: current checked-in users for this pond
-        const currentUsers = getPondUsers(pond.id)
+        const currentUsers = getPondUsers(pond.id) || []
+        const capacity = pond.capacity ?? pond.maxCapacity ?? 0
         const occupancy = {
           current: currentUsers.length,
-          capacity: pond.capacity ?? pond.maxCapacity ?? 0,
-          percentage: Math.min(100, Math.round((currentUsers.length / (pond.capacity ?? pond.maxCapacity ?? 1)) * 100))
+          capacity: capacity,
+          percentage: capacity > 0 ? Math.min(100, Math.round((currentUsers.length / capacity) * 100)) : 0
         }
             
             return (

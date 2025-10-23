@@ -13,23 +13,61 @@ import { AdminNavigation } from '@/components/AdminNavigation'
 import { useToastSafe } from '@/components/ui/toast'
 // server-backed API calls
 async function fetchPonds() {
-  const res = await fetch('/api/admin/ponds')
+  const res = await fetch('/api/ponds') // Use public ponds API instead of admin-only
   const json = await res.json()
   return json.ok ? json.data : []
 }
 
 async function createPondApi(data: any) {
-  const res = await fetch('/api/admin/ponds', { method: 'POST', body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } })
+  const res = await fetch('/api/admin/ponds', { 
+    method: 'POST', 
+    body: JSON.stringify(data), 
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include' // Include cookies for auth
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('Create pond failed:', res.status, text)
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  }
   return await res.json()
 }
 
 async function updatePondApi(id: number, data: any) {
-  const res = await fetch('/api/admin/ponds', { method: 'PUT', body: JSON.stringify({ id, ...data }), headers: { 'Content-Type': 'application/json' } })
+  console.log('[updatePondApi] Sending update request for pond:', id)
+  console.log('[updatePondApi] Request data:', data)
+  console.log('[updatePondApi] Document cookies:', document.cookie)
+  
+  const res = await fetch('/api/admin/ponds', { 
+    method: 'PUT', 
+    body: JSON.stringify({ id, ...data }), 
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include' // Include cookies for auth
+  })
+  
+  console.log('[updatePondApi] Response status:', res.status)
+  console.log('[updatePondApi] Response ok:', res.ok)
+  
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('[updatePondApi] Update pond failed:', res.status, text)
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  }
   return await res.json()
 }
 
 async function deletePondApi(id: number) {
-  const res = await fetch('/api/admin/ponds', { method: 'DELETE', body: JSON.stringify({ id }), headers: { 'Content-Type': 'application/json' } })
+  const res = await fetch('/api/admin/ponds', { 
+    method: 'DELETE', 
+    body: JSON.stringify({ id }), 
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include' // Include cookies for auth
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('Delete pond failed:', res.status, text)
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  }
   return await res.json()
 }
 import { Pond } from '@/types'
@@ -524,7 +562,6 @@ export default function PondsManagementPage() {
                   <Input
                     type="number"
                     min="1"
-                    max="100"
                     value={pondFormData.capacity}
                     onChange={(e) => handleCapacityChange(parseInt(e.target.value) || 20)}
                     required
@@ -598,7 +635,6 @@ export default function PondsManagementPage() {
                       <Input
                         type="number"
                         min="1"
-                        max="50"
                         value={pondFormData.seatingArrangement[0]}
                         onChange={(e) => handleSeatingArrangementChange(0, parseInt(e.target.value) || 1)}
                       />

@@ -1,26 +1,62 @@
 import { NextResponse } from 'next/server'
-import { createBooking, generateUniqueBookingId, getBookingById, getBookings, cancelBooking } from '@/lib/db-functions'
+import { createBooking, generateUniqueBookingId, getBookingById, getBookingByBookingId, getBookings, cancelBooking } from '@/lib/db-functions'
+
+// Transform database booking to match client BookingData interface
+function transformBooking(booking: any) {
+  if (!booking) return null
+  
+  return {
+    ...booking,
+    // Normalize type to lowercase for client
+    type: booking.type === 'EVENT' ? 'event' : 'pond',
+    // Map seatAssignments to seats for backward compatibility
+    seats: booking.seatAssignments?.map((sa: any) => ({
+      id: sa.id,
+      number: sa.seatNumber,
+      row: '', // Not used in current schema
+    })) || [],
+    // Keep original seatAssignments for detailed info if needed
+    seatAssignments: booking.seatAssignments,
+    // Map bookedBy to userId fields
+    userId: booking.bookedBy?.id || booking.bookedByUserId,
+    userName: booking.bookedBy?.name || '',
+    userEmail: booking.bookedBy?.email || '',
+  }
+}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
     // Expect bookingData shape matching createBooking
-    const bookingId = await generateUniqueBookingId('POND')
+    const type = body.type === 'event' ? 'EVENT' : 'POND'
+    const bookingId = await generateUniqueBookingId(type)
     const seats = body.seats || []
 
-    const bookingData = {
+    const bookingData: any = {
       bookingId,
-      type: 'POND',
+      type,
       bookedByUserId: body.bookedByUserId,
-      pondId: body.pondId,
       date: new Date(body.date),
-      timeSlotId: body.timeSlotId,
       seatsBooked: seats.length,
       totalPrice: body.totalPrice || 0,
-      seatAssignments: seats.map((s: any) => ({ seatNumber: s.number, assignedUserId: s.assignedUserId, assignedName: s.assignedName, assignedEmail: s.assignedEmail }))
+      seatAssignments: seats.map((s: any) => ({ 
+        seatNumber: s.number, 
+        assignedUserId: s.assignedUserId, 
+        assignedName: s.assignedName, 
+        assignedEmail: s.assignedEmail 
+      }))
     }
 
-    const result = await createBooking(bookingData as any)
+    // Add event-specific or pond-specific fields
+    if (type === 'EVENT') {
+      bookingData.eventId = body.eventId
+      bookingData.pondId = body.pondId // Optional for events
+    } else {
+      bookingData.pondId = body.pondId
+      bookingData.timeSlotId = body.timeSlotId
+    }
+
+    const result = await createBooking(bookingData)
     return NextResponse.json({ ok: true, data: result })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || 'Failed to create booking' }, { status: 500 })
@@ -36,23 +72,30 @@ export async function GET(request: Request) {
     const eventId = url.searchParams.get('eventId')
 
     if (bookingId) {
-      const result = await getBookingById(parseInt(bookingId))
-      return NextResponse.json({ ok: true, data: result })
+      // Check if bookingId is a number (database ID) or string (bookingId like "BK-EVT-001")
+      const numericId = parseInt(bookingId)
+      const result = isNaN(numericId) 
+        ? await getBookingByBookingId(bookingId) // String bookingId
+        : await getBookingById(numericId) // Numeric database ID
+      return NextResponse.json({ ok: true, data: transformBooking(result) })
     }
 
     if (userId) {
       const bookings = await getBookings({ userId: parseInt(userId) })
-      return NextResponse.json({ ok: true, data: bookings })
+      const transformed = bookings.map(transformBooking)
+      return NextResponse.json({ ok: true, data: transformed })
     }
 
     if (pondId) {
       const bookings = await getBookings({ pondId: parseInt(pondId) })
-      return NextResponse.json({ ok: true, data: bookings })
+      const transformed = bookings.map(transformBooking)
+      return NextResponse.json({ ok: true, data: transformed })
     }
 
     if (eventId) {
       const bookings = await getBookings({ eventId: parseInt(eventId) })
-      return NextResponse.json({ ok: true, data: bookings })
+      const transformed = bookings.map(transformBooking)
+      return NextResponse.json({ ok: true, data: transformed })
     }
 
     return NextResponse.json({ ok: false, error: 'missing params' }, { status: 400 })

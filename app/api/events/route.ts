@@ -12,10 +12,13 @@ export async function GET() {
       startTime: e.startTime,
       endTime: e.endTime,
       maxParticipants: e.maxParticipants,
+      maxSeatsPerBooking: e.maxSeatsPerBooking,
       entryFee: e.entryFee,
       bookingOpens: e.bookingOpens,
       status: e.status,
       assignedPonds: (e.eventPonds || []).map((ep: any) => ep.pondId),
+      pondNames: (e.eventPonds || []).map((ep: any) => ep.pond?.name || 'Unknown Pond'),
+      participants: e.bookings?.length || 0, // Count of bookings for this event
       games: (e.games || []).map((g: any) => ({
         id: g.id,
         name: g.name,

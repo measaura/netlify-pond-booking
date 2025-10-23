@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { getCurrentUser, hasPermission, hasRole } from '@/lib/auth'
 import type { User } from '@/lib/auth'
+import { ShieldAlert, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -20,6 +23,7 @@ export function AuthGuard({
 }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [accessDenied, setAccessDenied] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -38,22 +42,20 @@ export function AuthGuard({
 
       // Check role requirements
       if (requiredRole && !hasRole(requiredRole)) {
-        // Insufficient role, redirect based on user's actual role
-        console.log('Insufficient role, redirecting')
-        if (currentUser.role === 'user') {
-          router.push('/dashboard')
-        } else if (currentUser.role === 'manager') {
-          router.push('/admin')
-        } else {
-          router.push('/admin')
-        }
+        // Insufficient role, show access denied
+        console.log('Insufficient role, showing access denied')
+        setUser(currentUser)
+        setAccessDenied(true)
+        setLoading(false)
         return
       }
 
       // Check permission requirements
       if (requiredPermission && !hasPermission(requiredPermission)) {
-        console.log('Insufficient permissions, redirecting')
-        router.push(fallbackPath)
+        console.log('Insufficient permissions, showing access denied')
+        setUser(currentUser)
+        setAccessDenied(true)
+        setLoading(false)
         return
       }
 
@@ -92,6 +94,57 @@ export function AuthGuard({
 
   if (!user) {
     return null // Will redirect
+  }
+
+  if (accessDenied) {
+    // Determine the correct redirect path based on user role
+    const redirectPath = user.role === 'user' 
+      ? '/dashboard' 
+      : user.role === 'manager' 
+      ? '/manager/dashboard' 
+      : '/admin/dashboard'
+
+    const requiredRoleText = requiredRole 
+      ? requiredRole.charAt(0).toUpperCase() + requiredRole.slice(1)
+      : 'higher'
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <ShieldAlert className="h-8 w-8 text-red-600" />
+              </div>
+            </div>
+            
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Access Denied
+            </h1>
+            
+            <p className="text-gray-600 mb-6">
+              This page requires <span className="font-semibold text-red-600">{requiredRoleText}</span> access.
+              You are currently logged in as <span className="font-semibold">{user.role}</span>.
+            </p>
+
+            <div className="space-y-3">
+              <Link href={redirectPath} className="block">
+                <Button className="w-full" size="lg">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Go to My Dashboard
+                </Button>
+              </Link>
+            </div>
+
+            <div className="mt-6 pt-6 border-t">
+              <p className="text-sm text-gray-500">
+                Need help? Contact an administrator to request access.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return <>{children}</>

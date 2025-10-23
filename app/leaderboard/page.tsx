@@ -16,6 +16,140 @@ import { useAuth } from '@/lib/auth'
 import { getEvents } from '@/lib/db-functions'
 import type { Event, EventLeaderboard, LeaderboardEntry } from '@/types'
 
+function OverallLeaderboard() {
+  const { user } = useAuth()
+  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+
+    let mounted = true
+    ;(async () => {
+      try {
+        // Get database user ID by email
+        const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+        const userJson = await userRes.json()
+        if (!userJson.ok || !userJson.data?.id || !mounted) return
+        
+        const dbUserId = userJson.data.id
+        
+        // Fetch overall leaderboard
+        const lbRes = await fetch(`/api/leaderboard/overall`)
+        const lbJson = await lbRes.json()
+        if (lbJson.ok && mounted) {
+          const entries = Array.isArray(lbJson.data) ? lbJson.data : (lbJson.data?.entries || [])
+          setOverallLeaderboard(entries)
+        }
+      } catch (error) {
+        console.error('Error loading overall leaderboard:', error)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+
+    return () => { mounted = false }
+  }, [user])
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-center">
+          <div className="animate-pulse">Loading overall leaderboard...</div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (overallLeaderboard.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-center">
+          <Trophy className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Rankings Yet</h3>
+          <p className="text-gray-500 text-sm mb-4">
+            Be the first to catch some fish and climb the leaderboard!
+          </p>
+          <Button asChild>
+            <Link href="/book">Start Fishing</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Leaderboard Header */}
+      <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Trophy className="h-5 w-5 text-yellow-600" />
+            <h3 className="font-semibold text-gray-900">Global Rankings</h3>
+          </div>
+          <p className="text-sm text-gray-600">
+            Top anglers across all events and sessions
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Leaderboard */}
+      <div className="space-y-3">
+        {overallLeaderboard.map((entry, index) => {
+          const isCurrentUser = entry.userId === user?.id
+          return (
+            <Card key={entry.userId} className={`${isCurrentUser ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  {/* Rank */}
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                    index === 0 ? 'bg-yellow-500 text-white' :
+                    index === 1 ? 'bg-gray-400 text-white' :
+                    index === 2 ? 'bg-orange-600 text-white' :
+                    'bg-gray-200 text-gray-700'
+                  }`}>
+                    {index < 3 ? (
+                      index === 0 ? '🥇' :
+                      index === 1 ? '🥈' : '🥉'
+                    ) : (
+                      entry.rank
+                    )}
+                  </div>
+
+                  {/* User Info */}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900">
+                        {entry.userName}
+                        {isCurrentUser && <span className="text-blue-600 ml-1">(You)</span>}
+                      </h3>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 mt-2 text-sm">
+                      <div>
+                        <div className="text-gray-500 text-xs">Weight</div>
+                        <div className="font-medium">{entry.totalWeight.toFixed(1)}kg</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Fish</div>
+                        <div className="font-medium">{entry.totalFish}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500 text-xs">Biggest</div>
+                        <div className="font-medium text-orange-600">{entry.biggestFish.toFixed(1)}kg</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function CurrentEventLeaderboard() {
   const { user } = useAuth()
   const [currentEventLeaderboard, setCurrentEventLeaderboard] = useState<EventLeaderboard | null>(null)
@@ -27,8 +161,15 @@ function CurrentEventLeaderboard() {
     let mounted = true
     ;(async () => {
       try {
+        // Get database user ID by email
+        const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+        const userJson = await userRes.json()
+        if (!userJson.ok || !userJson.data?.id || !mounted) return
+        
+        const dbUserId = userJson.data.id
+        
         // Fetch user's participated events from server
-        const peRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+        const peRes = await fetch(`/api/user/participated-events?userId=${dbUserId}`)
         const peJson = await peRes.json()
         if (!peJson.ok || !mounted) return
 
@@ -171,7 +312,14 @@ function PastEventLeaderboards() {
     let mounted = true
     ;(async () => {
       try {
-        const peRes = await fetch(`/api/user/participated-events?userId=${user.id}`)
+        // Get database user ID by email
+        const userRes = await fetch(`/api/user?email=${encodeURIComponent(user.email)}`)
+        const userJson = await userRes.json()
+        if (!userJson.ok || !userJson.data?.id || !mounted) return
+        
+        const dbUserId = userJson.data.id
+        
+        const peRes = await fetch(`/api/user/participated-events?userId=${dbUserId}`)
         const peJson = await peRes.json()
         if (!peJson.ok || !mounted) return
 
@@ -354,19 +502,27 @@ export default function LeaderboardPage() {
         </div>
 
         <div className="max-w-md mx-auto p-4">
-          <Tabs defaultValue="current" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="current" className="flex items-center gap-2">
-                <Trophy className="h-4 w-4" />
+          <Tabs defaultValue="overall" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="overall" className="flex items-center gap-1 text-xs">
+                <Star className="h-3 w-3" />
+                Overall
+              </TabsTrigger>
+              <TabsTrigger value="current" className="flex items-center gap-1 text-xs">
+                <Trophy className="h-3 w-3" />
                 Current
               </TabsTrigger>
-              <TabsTrigger value="past" className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Past Events
+              <TabsTrigger value="past" className="flex items-center gap-1 text-xs">
+                <Calendar className="h-3 w-3" />
+                Past
               </TabsTrigger>
             </TabsList>
             
             <div className="mt-4">
+              <TabsContent value="overall" className="mt-0">
+                <OverallLeaderboard />
+              </TabsContent>
+              
               <TabsContent value="current" className="mt-0">
                 <CurrentEventLeaderboard />
               </TabsContent>

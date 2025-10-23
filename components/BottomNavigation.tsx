@@ -63,10 +63,10 @@ export function BottomNavigation() {
       path: '/bookings'
     },
     {
-      id: 'journey',
-      label: 'Journey',
+      id: 'leaderboard',
+      label: 'Leaderboard',
       icon: Trophy,
-      path: '/journey'
+      path: '/leaderboard'
     },
     {
       id: 'notifications',
@@ -93,7 +93,8 @@ export function BottomNavigation() {
         {navigationItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.path || 
-            (item.path === '/dashboard' && (pathname === '/' || pathname.startsWith('/dashboard')))
+            (item.path === '/dashboard' && (pathname === '/' || pathname.startsWith('/dashboard'))) ||
+            (item.path === '/leaderboard' && pathname === '/leaderboard')
           
           return (
             <button
