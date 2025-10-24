@@ -81,6 +81,7 @@ export interface Game {
   measurementUnit: 'kg' | 'cm' | 'other'
   decimalPlaces?: number
   description: string
+  eventId?: number | null
   prizes: Prize[]
   isActive: boolean
   createdAt: string
@@ -93,7 +94,10 @@ export interface Prize {
   type: 'money' | 'item'
   value: number
   rank?: number
+  rankStart?: number
+  rankEnd?: number
   description: string
+  gameId?: number | null
   isActive: boolean
   createdAt: string
   updatedAt: string

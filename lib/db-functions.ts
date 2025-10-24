@@ -521,11 +521,17 @@ export async function getEvents() {
           pond: true,
         }
       },
-      games: {
+      eventGames: {
         include: {
-          prizes: true,
+          game: true,
+          prizeSet: {
+            include: {
+              prizes: true,
+            }
+          }
         }
       },
+      specialPrizes: true,
       bookings: {
         include: {
           bookedBy: true,
@@ -541,16 +547,39 @@ export async function getEvents() {
 // ============================================================================
 
 export async function getGames() {
+  // Games are now standalone templates (no eventId filter)
   return await prisma.game.findMany({
     orderBy: { id: 'asc' },
-    include: { prizes: true },
+    include: { 
+      eventGames: {
+        include: {
+          event: true,
+          prizeSet: {
+            include: {
+              prizes: true
+            }
+          }
+        }
+      }
+    },
   })
 }
 
 export async function getGameById(id: number) {
   return await prisma.game.findUnique({
     where: { id },
-    include: { prizes: true },
+    include: { 
+      eventGames: {
+        include: {
+          event: true,
+          prizeSet: {
+            include: {
+              prizes: true
+            }
+          }
+        }
+      }
+    },
   })
 }
 
@@ -558,22 +587,18 @@ export async function createGame(gameData: {
   name: string
   type: string
   measurementUnit?: string
-  targetValue?: number
+  targetWeight?: number
   decimalPlaces?: number
   description?: string
   isActive?: boolean
-  eventId?: number
 }) {
-  // Ensure required relation eventId exists. If not provided, attempt to use the first event.
-  let eventId = gameData.eventId
-  if (!eventId) {
-    const evt = await prisma.event.findFirst({ orderBy: { id: 'asc' } })
-    if (evt) eventId = evt.id
-    else throw new Error('No event exists. Create an event first before adding games.')
-  }
-
-  // Cast to any to avoid strict TS mapping issues; runtime will validate fields
-  return await prisma.game.create({ data: { ...gameData, eventId, isActive: gameData.isActive ?? true } as any })
+  // Games are now standalone templates - no eventId needed
+  return await prisma.game.create({ 
+    data: { 
+      ...gameData, 
+      isActive: gameData.isActive ?? true 
+    } as any 
+  })
 }
 
 export async function updateGame(id: number, gameData: Partial<any>) {
@@ -584,13 +609,80 @@ export async function updateGame(id: number, gameData: Partial<any>) {
 }
 
 export async function deleteGame(id: number) {
-  // cascade delete prizes via DB relations if set; otherwise remove prizes first
-  await prisma.prize.deleteMany({ where: { gameId: id } })
+  // EventGame entries will be cascade deleted by DB
   return await prisma.game.delete({ where: { id } })
 }
 
+// NEW: Prize Set Functions
+export async function getPrizeSets() {
+  return await prisma.prizeSet.findMany({
+    orderBy: { id: 'asc' },
+    include: {
+      prizes: true,
+      eventGames: {
+        include: {
+          event: true,
+          game: true
+        }
+      }
+    }
+  })
+}
+
+export async function getPrizeSetById(id: number) {
+  return await prisma.prizeSet.findUnique({
+    where: { id },
+    include: {
+      prizes: true,
+      eventGames: {
+        include: {
+          event: true,
+          game: true
+        }
+      }
+    }
+  })
+}
+
+export async function createPrizeSet(prizeSetData: {
+  name: string
+  description?: string
+  isActive?: boolean
+}) {
+  return await prisma.prizeSet.create({
+    data: {
+      ...prizeSetData,
+      isActive: prizeSetData.isActive ?? true
+    }
+  })
+}
+
+export async function updatePrizeSet(id: number, prizeSetData: Partial<any>) {
+  return await prisma.prizeSet.update({
+    where: { id },
+    data: prizeSetData
+  })
+}
+
+export async function deletePrizeSet(id: number) {
+  // Prizes will be cascade deleted by DB
+  return await prisma.prizeSet.delete({ where: { id } })
+}
+
 export async function getPrizes() {
-  return await prisma.prize.findMany({ orderBy: { id: 'asc' } })
+  return await prisma.prize.findMany({ 
+    orderBy: { id: 'asc' },
+    include: {
+      prizeSet: true
+    }
+  })
+}
+
+export async function getPrizesByPrizeSetId(prizeSetId: number) {
+  return await prisma.prize.findMany({
+    where: { prizeSetId },
+    orderBy: { rankStart: 'asc' }
+  })
 }
 
 export async function createPrize(prizeData: {
@@ -599,21 +691,27 @@ export async function createPrize(prizeData: {
   value: number
   description?: string
   isActive?: boolean
-  gameId?: number
+  prizeSetId: number  // Now requires prizeSetId instead of gameId
+  rankStart?: number
+  rankEnd?: number
 }) {
-  // Prize requires a game relation. If gameId not provided, attempt to attach to first game.
-  let gameId = prizeData.gameId
-  if (!gameId) {
-    const g = await prisma.game.findFirst({ orderBy: { id: 'asc' } })
-    if (g) gameId = g.id
-    else throw new Error('No game exists. Create a game first before adding prizes.')
+  // Prize requires a prize set relation
+  if (!prizeData.prizeSetId) {
+    throw new Error('prizeSetId is required. Prizes must belong to a Prize Set.')
   }
 
   // Prize requires rankStart/rankEnd — default to 1 for single rank
-  const rankStart = (prizeData as any).rankStart ?? 1
-  const rankEnd = (prizeData as any).rankEnd ?? 1
+  const rankStart = prizeData.rankStart ?? 1
+  const rankEnd = prizeData.rankEnd ?? 1
 
-  return await prisma.prize.create({ data: { ...prizeData, isActive: prizeData.isActive ?? true, gameId, rankStart, rankEnd } as any })
+  return await prisma.prize.create({
+    data: {
+      ...prizeData,
+      rankStart,
+      rankEnd,
+      isActive: prizeData.isActive ?? true
+    } as any
+  })
 }
 
 export async function updatePrize(id: number, prizeData: Partial<any>) {
@@ -634,11 +732,17 @@ export async function getEventById(id: number) {
           pond: true,
         }
       },
-      games: {
+      eventGames: {
         include: {
-          prizes: true,
+          game: true,
+          prizeSet: {
+            include: {
+              prizes: true,
+            }
+          }
         }
       },
+      specialPrizes: true,
       bookings: {
         include: {
           bookedBy: true,
@@ -669,8 +773,15 @@ export async function createEvent(eventData: {
   entryFee: number
   maxParticipants?: number
   pondIds: number[]
+  eventGames?: Array<{
+    gameId: number
+    prizeSetId: number
+    customGameName?: string | null
+    displayOrder: number
+    isActive?: boolean
+  }>
 }) {
-  const { pondIds, ...eventDetails } = eventData
+  const { pondIds, eventGames, ...eventDetails } = eventData
 
   const event = await prisma.event.create({
     data: {
@@ -693,6 +804,20 @@ export async function createEvent(eventData: {
     })
   }
 
+  // Link event to games with prize sets
+  if (eventGames && eventGames.length > 0) {
+    await prisma.eventGame.createMany({
+      data: eventGames.map(eg => ({
+        eventId: event.id,
+        gameId: eg.gameId,
+        prizeSetId: eg.prizeSetId,
+        customGameName: eg.customGameName || null,
+        displayOrder: eg.displayOrder,
+        isActive: eg.isActive !== false,
+      }))
+    })
+  }
+
   return await getEventById(event.id)
 }
 
@@ -704,7 +829,7 @@ export async function deleteEvent(id: number) {
 
 export async function updateEvent(id: number, eventData: any) {
   // Map incoming fields to schema fields and handle pond links
-  const { assignedPonds, startDate, endDate, bookingOpens, ...rest } = eventData
+  const { assignedPonds, pondIds, startDate, endDate, bookingOpens, eventGames, ...rest } = eventData
 
   const updated = await prisma.event.update({
     where: { id },
@@ -717,11 +842,29 @@ export async function updateEvent(id: number, eventData: any) {
     } as any,
   })
 
-  // If assignedPonds provided, sync eventPonds
-  if (Array.isArray(assignedPonds)) {
+  // If assignedPonds or pondIds provided, sync eventPonds
+  const pondsToAssign = assignedPonds || pondIds
+  if (Array.isArray(pondsToAssign)) {
     await prisma.eventPond.deleteMany({ where: { eventId: id } })
-    if (assignedPonds.length > 0) {
-      await prisma.eventPond.createMany({ data: assignedPonds.map((pid: number) => ({ eventId: id, pondId: pid })) })
+    if (pondsToAssign.length > 0) {
+      await prisma.eventPond.createMany({ data: pondsToAssign.map((pid: number) => ({ eventId: id, pondId: pid })) })
+    }
+  }
+
+  // If eventGames provided, sync EventGame entries
+  if (Array.isArray(eventGames)) {
+    await prisma.eventGame.deleteMany({ where: { eventId: id } })
+    if (eventGames.length > 0) {
+      await prisma.eventGame.createMany({
+        data: eventGames.map((eg: any) => ({
+          eventId: id,
+          gameId: eg.gameId,
+          prizeSetId: eg.prizeSetId,
+          customGameName: eg.customGameName || null,
+          displayOrder: eg.displayOrder || 0,
+          isActive: eg.isActive !== false,
+        }))
+      })
     }
   }
 
