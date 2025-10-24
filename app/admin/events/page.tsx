@@ -17,7 +17,9 @@ import {
   Users,
   DollarSign,
   Trophy,
-  Clock
+  Clock,
+  X,
+  ChevronDown
 } from "lucide-react"
 import Link from "next/link"
 import { AuthGuard } from "@/components/AuthGuard"
@@ -39,8 +41,26 @@ async function fetchEvents() {
 
 async function fetchPondsAdmin() {
   const res = await fetch('/api/admin/ponds')
-  const json = await res.json()
-  return json.ok ? json.data : []
+  const data = await res.json()
+  return data.data || []
+}
+
+async function fetchGamesAdmin() {
+  const res = await fetch('/api/admin/games')
+  const data = await res.json()
+  return data.data || []
+}
+
+async function fetchPrizesAdmin() {
+  const res = await fetch('/api/admin/prizes')
+  const data = await res.json()
+  return data.data || []
+}
+
+async function fetchPrizeSets() {
+  const res = await fetch('/api/admin/prize-sets')
+  const data = await res.json()
+  return data.data || []
 }
 
 async function createEventApi(data: any) {
@@ -76,32 +96,16 @@ interface EventFormData {
   entryFee: number
   bookingOpens: string
   status: 'open' | 'upcoming' | 'closed' | 'active' | 'completed'
-  // pondId: number        // Keep for backward compatibility
-  // pondName: string      // Keep for backward compatibility
-  // prize: string         // Keep for backward compatibility
   assignedPonds: number[] // Changed from single pondId
-  games: {
-    id: number
-    name: string
-    type: 'heaviest' | 'nearest' | 'biggest' | 'other'
-    measurementUnit: 'kg' | 'cm' | 'other'
-    targetValue?: number
-    decimalPlaces?: number
-    description: string
-    prizes: {
-      id: number
-      name: string
-      type: 'money' | 'item'
-      value: number
-      rank?: number
-      description: string
-      isActive: boolean
-      createdAt: string
-      updatedAt: string
-    }[]
-    isActive: boolean
-    createdAt: string
-    updatedAt: string
+  description?: string
+  eventGames: {
+    gameId: number
+    prizeSetId: number
+    customGameName?: string
+    displayOrder: number
+    // For displaying selected game/prize set details
+    game?: Game
+    prizeSet?: any
   }[]
 }
 
@@ -111,15 +115,17 @@ export default function EventsManagementPage() {
     participants: number;
     revenue: number;
     availableSpots: number;
+    assignedPonds?: number[];
+    prizePool?: number;
     bookingOpenIn?: number;
     eventIn?: number;
   })[]>([])
   const [ponds, setPonds] = useState<Pond[]>([])
+  const [games, setGames] = useState<Game[]>([])
+  const [prizes, setPrizes] = useState<Prize[]>([])
+  const [prizeSets, setPrizeSets] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  // const [games, setGames] = useState<Game[]>([])
-  // const [prizes, setPrizes] = useState<Prize[]>([])
-  const games: Game[] = []
-  const prizes: Prize[] = []
+  const [expandedGameId, setExpandedGameId] = useState<number | null>(null)
 
   // Event management state
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false)
@@ -134,14 +140,40 @@ export default function EventsManagementPage() {
     bookingOpens: '',
     status: 'upcoming',
     assignedPonds: [],
-    games: []
+    eventGames: []
   })
 
   const loadData = () => {
     setIsLoading(true)
     try {
       fetchEvents().then((evs: any[]) => {
-        setEvents(evs)
+        // Process events to calculate statistics from bookings
+        const processedEvents = evs.map(event => {
+          const bookings = event.bookings || []
+          const participants = bookings.length
+          const revenue = bookings.reduce((sum: number, booking: any) => sum + (booking.totalPrice || 0), 0)
+          const availableSpots = (event.maxParticipants || 0) - participants
+          
+          // Extract pond IDs from eventPonds
+          const assignedPonds = (event.eventPonds || []).map((ep: any) => ep.pondId)
+          
+          // Calculate total prize pool from eventGames
+          const prizePool = (event.eventGames || []).reduce((total: number, eg: any) => {
+            const prizes = eg.prizeSet?.prizes || []
+            const gameTotal = prizes.reduce((sum: number, prize: any) => sum + (prize.value || 0), 0)
+            return total + gameTotal
+          }, 0)
+          
+          return {
+            ...event,
+            participants,
+            revenue,
+            availableSpots,
+            assignedPonds,
+            prizePool
+          }
+        })
+        setEvents(processedEvents)
       })
       fetchPondsAdmin().then((ps: any[]) => {
         const normalized = ps.map(p => ({
@@ -156,6 +188,15 @@ export default function EventsManagementPage() {
           seatingArrangement: p.seatingArrangement || [5,5,5,5],
         }))
         setPonds(normalized)
+      })
+      fetchGamesAdmin().then((gs: any[]) => {
+        setGames(gs)
+      })
+      fetchPrizesAdmin().then((ps: any[]) => {
+        setPrizes(ps)
+      })
+      fetchPrizeSets().then((psets: any[]) => {
+        setPrizeSets(psets)
       })
     } catch (error) {
       console.error('Error loading events data:', error)
@@ -224,6 +265,14 @@ const handleEventSubmit = async (e: React.FormEvent) => {
       endDate: new Date(eventFormData.date + 'T' + eventFormData.endTime),
       bookingOpens: eventFormData.bookingOpens ? new Date(eventFormData.bookingOpens) : new Date(),
       pondIds: eventFormData.assignedPonds,
+      // Transform eventGames to API format (remove UI helper fields)
+      eventGames: eventFormData.eventGames.map(eg => ({
+        gameId: eg.gameId,
+        prizeSetId: eg.prizeSetId,
+        customGameName: eg.customGameName || null,
+        displayOrder: eg.displayOrder,
+        isActive: true
+      }))
     }
 
     if (editingEvent) {
@@ -308,67 +357,105 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     }
   }
 
-  const handleGameChange = (gameIndex: number, gameId: number) => {
+  // Event Game Handlers for New Structure
+  const handleAddEventGame = () => {
     setEventFormData(prev => ({
       ...prev,
-      games: prev.games.map((game, idx) =>
-        idx === gameIndex ? { ...game, gameId } : game
-      )
+      eventGames: [...prev.eventGames, {
+        gameId: games[0]?.id || 0,
+        prizeSetId: prizeSets[0]?.id || 0,
+        customGameName: undefined,
+        displayOrder: prev.eventGames.length,
+        game: games[0],
+        prizeSet: prizeSets[0]
+      }]
     }))
   }
-  
-  // const handleAddGame = () => {
-  //   setEventFormData(prev => ({
-  //     ...prev,
-  //     eventGames: [...prev.eventGames, {
-  //       id: Date.now(),
-  //       gameId: games[0]?.id || 0,
-  //       prizes: []
-  //     }]
-  //   }))
-  // }
-  
-  // const handleAddPrize = (gameIndex: number) => {
-  //   setEventFormData(prev => ({
-  //     ...prev,
-  //     eventGames: prev.eventGames.map((game, idx) =>
-  //       idx === gameIndex ? {
-  //         ...game,
-  //         prizes: [...game.prizes, {
-  //           prizeId: prizes[0]?.id || 0,
-  //           rank: game.prizes.length + 1
-  //         }]
-  //       } : game
-  //     )
-  //   }))
-  // }
-  
-  const handlePrizeChange = (gameIndex: number, prizeIndex: number, prizeId: number) => {
+
+  const handleEventGameChange = (index: number, field: 'gameId' | 'prizeSetId' | 'customGameName', value: number | string | undefined) => {
     setEventFormData(prev => ({
       ...prev,
-      games: prev.games.map((game, gIdx) =>
-        gIdx === gameIndex ? {
-          ...game,
-          prizes: game.prizes.map((prize, pIdx) =>
-            pIdx === prizeIndex ? { ...prize, prizeId } : prize
-          )
-        } : game
-      )
+      eventGames: prev.eventGames.map((eg, idx) => {
+        if (idx !== index) return eg
+        
+        const updated = { ...eg }
+        
+        if (field === 'gameId') {
+          const gameId = value as number
+          updated.gameId = gameId
+          updated.game = games.find(g => g.id === gameId)
+        } else if (field === 'prizeSetId') {
+          const prizeSetId = value as number
+          updated.prizeSetId = prizeSetId
+          updated.prizeSet = prizeSets.find(ps => ps.id === prizeSetId)
+        } else if (field === 'customGameName') {
+          updated.customGameName = value as string || undefined
+        }
+        
+        return updated
+      })
     }))
+  }
+
+  const handleRemoveEventGame = (index: number) => {
+    setEventFormData(prev => ({
+      ...prev,
+      eventGames: prev.eventGames.filter((_, i) => i !== index).map((eg, i) => ({
+        ...eg,
+        displayOrder: i
+      }))
+    }))
+  }
+
+  const handleMoveEventGame = (index: number, direction: 'up' | 'down') => {
+    setEventFormData(prev => {
+      const newEventGames = [...prev.eventGames]
+      const targetIndex = direction === 'up' ? index - 1 : index + 1
+      
+      if (targetIndex < 0 || targetIndex >= newEventGames.length) return prev
+      
+      // Swap positions
+      const temp = newEventGames[index]
+      newEventGames[index] = newEventGames[targetIndex]
+      newEventGames[targetIndex] = temp
+      
+      // Update displayOrder
+      return {
+        ...prev,
+        eventGames: newEventGames.map((eg, i) => ({ ...eg, displayOrder: i }))
+      }
+    })
+  }
+
+  // Remove old handler functions (these are no longer used)
+  const handleGameChange = (gameIndex: number, gameId: number) => {
+    // Deprecated - kept for compatibility during transition
+  }
+  
+  const handlePrizeChange = (gameIndex: number, prizeIndex: number, prizeId: number) => {
+    // Deprecated - kept for compatibility during transition
   }
   
   const handlePrizeRankChange = (gameIndex: number, prizeIndex: number, rank: number) => {
-    setEventFormData(prev => ({
-      ...prev,
-      games: prev.games.map((game, gIdx) =>
-        gIdx === gameIndex ? {
-          ...game,
-          prizes: game.prizes.map((prize, pIdx) =>
-            pIdx === prizeIndex ? { ...prize, rank } : prize
-          )
-        } : game
-      )
-    }))
+    // Deprecated - kept for compatibility during transition
+  }
+
+  const handleAddGame = () => {
+    // Deprecated - use handleAddEventGame instead
+    handleAddEventGame()
+  }
+
+  const handleAddPrize = (gameIndex: number) => {
+    // Deprecated - prizes are now assigned via prize sets
+  }
+
+  const handleRemoveGame = (index: number) => {
+    // Deprecated - use handleRemoveEventGame instead
+    handleRemoveEventGame(index)
+  }
+
+  const handleRemovePrize = (gameIndex: number, prizeIndex: number) => {
+    // Deprecated - prizes are now managed via prize sets
   }
   const resetEventForm = () => {
     setEventFormData({
@@ -377,54 +464,44 @@ const handleEventSubmit = async (e: React.FormEvent) => {
       startTime: '08:00',
       endTime: '16:00',
       maxParticipants: 50,
-      // pondId: ponds[0]?.id || 1,
-      // pondName: '',
-      // prize: '',
       entryFee: 50,
       bookingOpens: '',
       status: 'upcoming',
       assignedPonds: [],
-      games: []
+      eventGames: []
     })
   }
 
   const openEventDialog = (event?: Event) => {
     if (event) {
       setEditingEvent(event)
+      
+      // Extract assigned pond IDs from eventPonds relation or use existing assignedPonds field
+      const assignedPondIds = event.assignedPonds 
+        || (event as any).eventPonds?.map((ep: any) => ep.pondId) 
+        || []
+      
+      // Extract eventGames from the event
+      const eventGamesData = (event as any).eventGames || []
+      
       setEventFormData({
         name: event.name,
         date: new Date(event.date).toISOString().split('T')[0], // Convert to YYYY-MM-DD format
         startTime: event.startTime,
         endTime: event.endTime,
         maxParticipants: event.maxParticipants,
-        // pondId: event.pondId,
-        // pondName: event.pondName,
-        // prize: event.prize,
         entryFee: event.entryFee,
         bookingOpens: new Date(event.bookingOpens).toISOString().split('T')[0], // Convert to YYYY-MM-DD format
         status: event.status,
-        assignedPonds: event.assignedPonds,
-        games: event.games.map(eg => ({
-          id: eg.id,
-          name: eg.name,
-          type: eg.type,
-          measurementUnit: eg.measurementUnit,
-          targetValue: eg.targetValue,
-          decimalPlaces: eg.decimalPlaces,
-          isActive: eg.isActive,
-          createdAt: eg.createdAt,
-          updatedAt: eg.updatedAt,
-          description: eg.description,
-          prizes: eg.prizes.map(p => ({
-            id: p.id,
-            name: p.name,
-            type: p.type,
-            value: p.value,
-            description: p.description,
-            isActive: p.isActive,
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt
-          }))
+        assignedPonds: assignedPondIds,
+        description: (event as any).description,
+        eventGames: eventGamesData.map((eg: any) => ({
+          gameId: eg.gameId,
+          prizeSetId: eg.prizeSetId,
+          customGameName: eg.customGameName,
+          displayOrder: eg.displayOrder,
+          game: eg.game,
+          prizeSet: eg.prizeSet
         }))
       })
     } else {
@@ -457,50 +534,6 @@ const handleEventSubmit = async (e: React.FormEvent) => {
     const diffTime = eventDate.getTime() - now.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     return diffDays
-  }
-
-  // Add game to event
-  const handleAddGame = () => {
-    setEventFormData(prev => ({
-      ...prev,
-      games: [...prev.games, {
-        id: Date.now(),
-        name: '',
-        type: 'heaviest',
-        measurementUnit: 'kg',
-        decimalPlaces: 2,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        description: '',
-        prizes: []
-      }]
-    }))
-  }
-
-  // Add prize to game
-  const handleAddPrize = (gameId: number) => {
-    setEventFormData(prev => ({
-      ...prev,
-      games: prev.games.map(game => 
-        game.id === gameId 
-          ? {
-              ...game,
-              prizes: [...game.prizes, {
-                id: Date.now(),
-                name: '',
-                rank: game.prizes.length + 1,
-                type: 'money',
-                value: 0,
-                description: '',
-                isActive: true,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-              }]
-            }
-          : game
-      )
-    }))
   }
 
   return (
@@ -550,7 +583,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
               <CardContent className="p-4 text-center">
                 <Users className="h-6 w-6 text-green-600 mx-auto mb-2" />
                 <div className="text-lg font-bold text-gray-900">
-                  {events.reduce((sum, event) => sum + event.participants, 0)}
+                  {events.reduce((sum, event) => sum + (event.participants || 0), 0)}
                 </div>
                 <div className="text-xs text-gray-600">Participants</div>
               </CardContent>
@@ -559,7 +592,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
               <CardContent className="p-4 text-center">
                 <DollarSign className="h-6 w-6 text-purple-600 mx-auto mb-2" />
                 <div className="text-lg font-bold text-gray-900">
-                  ${events.reduce((sum, event) => sum + event.revenue, 0)}
+                  ${events.reduce((sum, event) => sum + (event.revenue || 0), 0)}
                 </div>
                 <div className="text-xs text-gray-600">Total Revenue</div>
               </CardContent>
@@ -605,24 +638,28 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                         <Clock className="h-4 w-4 text-gray-500" />
                         <span>{formatEventTimeRange(event)}</span>
                       </div>
-                      {/* // Replace the pond display section in the event card */}
+                      {/* Pond display section */}
                       <div className="flex items-center gap-2">
                         <span className="text-2xl">🌊</span>
                         <span>
-                          {event.assignedPonds
-                            .map(pondId => ponds.find(p => p.id === pondId)?.name)
-                            .filter(Boolean)
-                            .join(', ') || 'No ponds assigned'}
+                          {(() => {
+                            // Extract pond names directly from eventPonds relation
+                            const pondNames = ((event as any).eventPonds || [])
+                              .map((ep: any) => ep.pond?.name)
+                              .filter(Boolean)
+                              .join(', ')
+                            return pondNames || 'No ponds assigned'
+                          })()}
                         </span>
                       </div>
                     </div>
 
                     {/* Prize and Fee */}
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      {/* <div>
-                        <span className="text-gray-600">Prize:</span>
-                        <span className="font-medium ml-1">{event.prize}</span>
-                      </div> */}
+                      <div>
+                        <span className="text-gray-600">Prize Pool:</span>
+                        <span className="font-medium ml-1">${event.prizePool || 0}</span>
+                      </div>
                       <div>
                         <span className="text-gray-600">Entry:</span>
                         <span className="font-medium ml-1">${event.entryFee}</span>
@@ -633,13 +670,13 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>Participants</span>
-                        <span>{event.participants}/{event.maxParticipants}</span>
+                        <span>{event.participants || 0}/{event.maxParticipants || 0}</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
                           style={{ 
-                            width: `${Math.min(100, (event.participants / event.maxParticipants) * 100)}%` 
+                            width: `${Math.min(100, ((event.participants || 0) / (event.maxParticipants || 1)) * 100)}%` 
                           }}
                         ></div>
                       </div>
@@ -648,18 +685,94 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                     {/* Statistics */}
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div className="text-center p-2 bg-blue-50 rounded">
-                        <div className="font-semibold text-blue-700">{event.participants}</div>
+                        <div className="font-semibold text-blue-700">{event.participants || 0}</div>
                         <div className="text-blue-600">Signed Up</div>
                       </div>
                       <div className="text-center p-2 bg-green-50 rounded">
-                        <div className="font-semibold text-green-700">${event.revenue}</div>
+                        <div className="font-semibold text-green-700">${event.revenue || 0}</div>
                         <div className="text-green-600">Revenue</div>
                       </div>
                       <div className="text-center p-2 bg-orange-50 rounded">
-                        <div className="font-semibold text-orange-700">{event.availableSpots}</div>
+                        <div className="font-semibold text-orange-700">{event.availableSpots || 0}</div>
                         <div className="text-orange-600">Available</div>
                       </div>
                     </div>
+
+                    {/* Games & Prizes Accordion Section */}
+                    {((event as any).eventGames || []).length > 0 && (
+                      <div className="border-t pt-2 space-y-1">
+                        <div className="flex items-center gap-1 text-[10px] text-gray-600 mb-1">
+                          <Trophy className="h-2.5 w-2.5" />
+                          <span className="font-medium">Games</span>
+                        </div>
+                        
+                        {((event as any).eventGames || []).map((eg: any, idx: number) => {
+                          const gameName = eg.customGameName || eg.gameTemplate?.name || eg.game?.name || 'Unknown Game'
+                          const gameType = eg.gameTemplate?.type || eg.game?.type || ''
+                          const targetWeight = eg.gameTemplate?.targetWeight || eg.game?.targetWeight
+                          const isExpanded = expandedGameId === eg.id
+                          
+                          // Get top 3 prizes sorted by rank
+                          const topPrizes = (eg.prizeSet?.prizes || [])
+                            .filter((p: any) => p.rankStart <= 3)
+                            .sort((a: any, b: any) => a.rankStart - b.rankStart)
+                            .slice(0, 3)
+                          
+                          return (
+                            <div key={eg.id || idx} className="border rounded overflow-hidden">
+                              {/* Game Title - Always Visible (Accordion Header) */}
+                              <button
+                                onClick={() => setExpandedGameId(isExpanded ? null : eg.id)}
+                                className="w-full flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-green-50 hover:from-blue-100 hover:to-green-100 transition-colors"
+                              >
+                                <div className="flex items-center gap-1 text-left">
+                                  <Trophy className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+                                  <div>
+                                    <h4 className="font-semibold text-xs text-gray-900">{gameName}</h4>
+                                    <p className="text-[10px] text-gray-600">
+                                      {gameType === 'HEAVIEST_WEIGHT' && 'Heaviest'}
+                                      {gameType === 'TARGET_WEIGHT' && targetWeight && `${targetWeight}kg`}
+                                      {gameType === 'TOTAL_WEIGHT' && 'Total'}
+                                      {!gameType && 'Game'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <ChevronDown 
+                                  className={`h-3 w-3 text-blue-600 transition-transform duration-200 ${
+                                    isExpanded ? 'rotate-180' : ''
+                                  }`}
+                                />
+                              </button>
+                              
+                              {/* Game Details - Expandable (Accordion Body) */}
+                              {isExpanded && (
+                                <div className="p-2 bg-white border-t animate-in slide-in-from-top-2 duration-200">
+                                  {topPrizes.length > 0 && (
+                                    <div className="space-y-1">
+                                      {topPrizes.map((prize: any, pIdx: number) => (
+                                        <div key={prize.id || pIdx} className="flex items-center justify-between p-1.5 bg-gradient-to-r from-yellow-50 to-orange-50 rounded text-[10px]">
+                                          <span className="text-gray-700">
+                                            {prize.rankStart === 1 && '🥇'}
+                                            {prize.rankStart === 2 && '🥈'}
+                                            {prize.rankStart === 3 && '🥉'}
+                                            {' '}
+                                            {prize.rankStart === prize.rankEnd 
+                                              ? `${prize.rankStart}${prize.rankStart === 1 ? 'st' : prize.rankStart === 2 ? 'nd' : 'rd'}`
+                                              : `${prize.rankStart}-${prize.rankEnd}`
+                                            }
+                                          </span>
+                                          <span className="font-bold text-yellow-700">${prize.value}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
 
                     {/* Booking Opens Info */}
                     {event.bookingOpenIn && event.bookingOpenIn > 0 && (
@@ -861,135 +974,149 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                 </div>
               </div>
 
-              {/* Games Section */}
+              {/* Event Games Section - NEW STRUCTURE */}
               <div className="border-t mt-4 pt-4">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-medium">Competition Games</h3>
-                  <Button type="button" onClick={handleAddGame} variant="outline" size="sm">
+                  <Button type="button" onClick={handleAddEventGame} variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
                     Add Game
                   </Button>
                 </div>
 
-                {eventFormData.games.map((gameEntry, index) => (
-                  <Card key={gameEntry.id} className="mb-4">
+                {eventFormData.eventGames.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No games added yet. Click "Add Game" to get started.
+                  </div>
+                )}
+
+                {eventFormData.eventGames.map((eventGame, index) => (
+                  <Card key={index} className="mb-4">
                     <CardContent className="p-4">
                       <div className="space-y-4">
-                        <select
-                          value={gameEntry.id}
-                          onChange={(e) => handleGameChange(index, parseInt(e.target.value))}
-                          className="w-full px-3 py-2 border rounded-md"
-                        >
-                          <option value="">Select a game</option>
-                          {games.map(game => (
-                            <option key={game.id} value={game.id}>
-                              {game.name} ({game.type})
-                            </option>
-                          ))}
-                        </select>
-              
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-medium">Prizes</h4>
-                            <Button 
-                              type="button"
-                              onClick={() => handleAddPrize(index)} 
-                              variant="outline" 
-                              size="sm"
-                            >
-                              Add Prize
-                            </Button>
-                          </div>
-                          
-                          {gameEntry.prizes.map((prizeEntry, prizeIndex) => (
-                            <div key={prizeIndex} className="grid grid-cols-2 gap-2">
+                        {/* Game Selection and Actions */}
+                        <div className="flex gap-2 items-start">
+                          <div className="flex-1 space-y-3">
+                            {/* Game Template Dropdown */}
+                            <div>
+                              <label className="text-sm font-medium mb-1 block">Game Template</label>
                               <select
-                                value={prizeEntry.id}
-                                onChange={(e) => handlePrizeChange(index, prizeIndex, parseInt(e.target.value))}
+                                value={eventGame.gameId}
+                                onChange={(e) => handleEventGameChange(index, 'gameId', parseInt(e.target.value))}
                                 className="w-full px-3 py-2 border rounded-md"
                               >
-                                <option value="">Select a prize</option>
-                                {prizes.map(prize => (
-                                  <option key={prize.id} value={prize.id}>
-                                    {prize.name} (${prize.value})
+                                <option value="">Select a game template</option>
+                                {games.map(game => {
+                                  // Format game type display (same as accordion below game title)
+                                  const gameType = (game as any).type;
+                                  const targetWeight = (game as any).targetWeight;
+                                  let gameTypeDisplay = '';
+                                  
+                                  if (gameType === 'HEAVIEST_WEIGHT') {
+                                    gameTypeDisplay = 'Heaviest';
+                                  } else if (gameType === 'TARGET_WEIGHT') {
+                                    gameTypeDisplay = targetWeight ? `${targetWeight}kg` : 'Target Weight';
+                                  } else if (gameType === 'TOTAL_WEIGHT') {
+                                    gameTypeDisplay = 'Total';
+                                  } else if (gameType === 'EXACT_WEIGHT') {
+                                    gameTypeDisplay = 'Exact Weight';
+                                  } else {
+                                    gameTypeDisplay = gameType || 'Game';
+                                  }
+                                  
+                                  return (
+                                    <option key={game.id} value={game.id}>
+                                      {game.name} ({gameTypeDisplay})
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            {/* Custom Game Name (Optional) */}
+                            <div>
+                              <label className="text-sm font-medium mb-1 block">
+                                Custom Name (Optional)
+                                <span className="text-xs text-gray-500 ml-2">Override template name for this event</span>
+                              </label>
+                              <Input
+                                value={eventGame.customGameName || ''}
+                                onChange={(e) => handleEventGameChange(index, 'customGameName', e.target.value)}
+                                placeholder={eventGame.game?.name || "Enter custom name..."}
+                              />
+                            </div>
+
+                            {/* Prize Set Selection */}
+                            <div>
+                              <label className="text-sm font-medium mb-1 block">Prize Set</label>
+                              <select
+                                value={eventGame.prizeSetId}
+                                onChange={(e) => handleEventGameChange(index, 'prizeSetId', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 border rounded-md"
+                              >
+                                <option value="">Select a prize set</option>
+                                {prizeSets.map(ps => (
+                                  <option key={ps.id} value={ps.id}>
+                                    {ps.name} ({ps.prizes?.length || 0} prizes)
                                   </option>
                                 ))}
                               </select>
-                              <Input
-                                type="number"
-                                placeholder="Rank"
-                                value={prizeEntry.rank}
-                                onChange={(e) => handlePrizeRankChange(index, prizeIndex, parseInt(e.target.value))}
-                                min={1}
-                              />
                             </div>
-                          ))}
+
+                            {/* Show Prize Set Details */}
+                            {eventGame.prizeSet && (
+                              <div className="bg-gray-50 p-3 rounded-md">
+                                <p className="text-sm font-medium mb-2">Prize Breakdown:</p>
+                                <div className="space-y-1 text-sm">
+                                  {eventGame.prizeSet.prizes?.map((prize: any) => (
+                                    <div key={prize.id} className="flex justify-between">
+                                      <span>{prize.name}</span>
+                                      <span className="font-medium">${prize.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex flex-col gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleMoveEventGame(index, 'up')}
+                              disabled={index === 0}
+                              title="Move up"
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleMoveEventGame(index, 'down')}
+                              disabled={index === eventFormData.eventGames.length - 1}
+                              title="Move down"
+                            >
+                              ↓
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleRemoveEventGame(index)}
+                              title="Remove game"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
-              
-              {/* <div className="space-y-4">
-                <h3 className="text-lg font-medium mb-2">Competition Games</h3>
-                {eventFormData.games.map((game, index) => (
-                  <Card key={game.id} className="mb-4">
-                    <CardContent className="p-4">
-                      <div className="grid gap-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <Input
-                            placeholder="Game Name"
-                            value={game.name}
-                            onChange={(e) => handleGameChange(game.id, 'name', e.target.value)}
-                          />
-                          <select
-                            value={game.type}
-                            onChange={(e) => handleGameChange(game.id, 'type', e.target.value)}
-                            className="form-select"
-                          >
-                            <option value="heaviest">Heaviest Catch</option>
-                            <option value="nearest">Nearest Weight</option>
-                            <option value="biggest">Biggest Size</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </div>
-
-                        {/* Prize Section 
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-medium">Prizes</h4>
-                            <Button onClick={() => handleAddPrize(game.id)} size="sm">
-                              Add Prize
-                            </Button>
-                          </div>
-                          {game.prizes.map((prize, prizeIndex) => (
-                            <div key={prizeIndex} className="grid grid-cols-3 gap-2">
-                              <Input
-                                type="number"
-                                placeholder="Rank"
-                                value={prize.rank}
-                                onChange={(e) => handlePrizeChange(game.id, prizeIndex, 'rank', parseInt(e.target.value))}
-                              />
-                              <Input
-                                type="number"
-                                placeholder="Value"
-                                value={prize.value}
-                                onChange={(e) => handlePrizeChange(game.id, prizeIndex, 'value', parseFloat(e.target.value))}
-                              />
-                              <Input
-                                placeholder="Description"
-                                value={prize.description}
-                                onChange={(e) => handlePrizeChange(game.id, prizeIndex, 'description', e.target.value)}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Button onClick={handleAddGame}>Add Game</Button>
-              </div> */}
 
               <div className="flex gap-2 pt-4">
                 <Button type="submit" disabled={isLoading} className="flex-1">

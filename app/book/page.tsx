@@ -7,9 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Fish, Trophy, Users, Calendar, Clock, MapPin, Star } from 'lucide-react'
+import { Fish, Trophy, Users, Calendar, Clock, MapPin, Star, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
-import { formatEventTimeRange} from '@/lib/localStorage'
 import { Pond, Event } from '@/types'
 
 function PondsTab() {
@@ -182,6 +181,7 @@ function PondsTab() {
 function EventsTab() {
   const [events, setEvents] = useState<(Event & { participants: number })[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedGameId, setExpandedGameId] = useState<number | null>(null)
 
   useEffect(() => {
     try {
@@ -223,6 +223,13 @@ function EventsTab() {
 
       <div className="space-y-3">
         {events.map((event) => {
+          // Calculate prize pool from eventGames
+          const prizePool = ((event as any).eventGames || []).reduce((total: number, eg: any) => {
+            const prizes = eg.prizeSet?.prizes || []
+            const gameTotal = prizes.reduce((sum: number, prize: any) => sum + (prize.value || 0), 0)
+            return total + gameTotal
+          }, 0)
+          
           // Compute event status locally using server-provided fields
           const computeEventStatus = (ev: any): 'open' | 'upcoming' | 'full' | 'closed' => {
             try {
@@ -301,7 +308,7 @@ function EventsTab() {
                       </div>
                       <p className="font-medium">
                         {event.startTime && event.endTime ? 
-                          formatEventTimeRange(event.startTime, event.endTime) : 
+                          `${event.startTime} - ${event.endTime}` : 
                           'Time TBD'
                         }
                       </p>
@@ -312,7 +319,7 @@ function EventsTab() {
                     </div>
                     <div>
                       <p className="text-gray-600">Prize Pool</p>
-                      <p className="font-medium text-yellow-600">{event.games.map(game => game.prizes.map(prize => prize.value).reduce((a, b) => a + b, 0)).reduce((a, b) => a + b, 0)}</p>
+                      <p className="font-medium text-yellow-600">${prizePool}</p>
                     </div>
                   </div>
 
@@ -329,6 +336,92 @@ function EventsTab() {
                       ></div>
                     </div>
                   </div>
+
+                  {/* Competition Games Accordion */}
+                  {((event as any).eventGames || []).length > 0 && (
+                    <div className="pt-3 border-t space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <Trophy className="h-4 w-4 text-yellow-600" />
+                        <span>Competition Games</span>
+                      </div>
+                      <div className="space-y-2">
+                        {((event as any).eventGames || []).map((eventGame: any) => {
+                          const gameName = eventGame.customGameName || eventGame.game?.name || 'Unknown Game';
+                          const gameType = eventGame.gameTemplate?.type || eventGame.game?.type || '';
+                          const targetWeight = eventGame.gameTemplate?.targetWeight || eventGame.game?.targetWeight;
+                          
+                          // Format game type for display
+                          let gameTypeDisplay = '';
+                          if (gameType === 'HEAVIEST_WEIGHT') {
+                            gameTypeDisplay = 'Heaviest Weight';
+                          } else if (gameType === 'TARGET_WEIGHT' && targetWeight) {
+                            gameTypeDisplay = `Target Weight (${targetWeight}kg)`;
+                          } else if (gameType === 'TOTAL_WEIGHT') {
+                            gameTypeDisplay = 'Total Weight';
+                          } else if (gameType) {
+                            // Fallback: convert SNAKE_CASE to Title Case
+                            gameTypeDisplay = gameType.split('_').map((word: string) => 
+                              word.charAt(0) + word.slice(1).toLowerCase()
+                            ).join(' ');
+                          }
+                          
+                          const prizes = eventGame.prizeSet?.prizes || [];
+                          const isExpanded = expandedGameId === eventGame.id;
+
+                          return (
+                            <div key={eventGame.id} className="border rounded-lg overflow-hidden">
+                              <button
+                                onClick={() => setExpandedGameId(isExpanded ? null : eventGame.id)}
+                                className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Trophy className="h-4 w-4 text-yellow-600" />
+                                  <div className="text-left">
+                                    <p className="text-sm font-medium">{gameName}</p>
+                                    {gameTypeDisplay && (
+                                      <p className="text-xs text-gray-500">{gameTypeDisplay}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <ChevronDown 
+                                  className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                />
+                              </button>
+                              
+                              {isExpanded && prizes.length > 0 && (
+                                <div className="px-3 py-2 bg-gray-50 border-t space-y-1">
+                                  {prizes
+                                    .sort((a: any, b: any) => a.rankStart - b.rankStart)
+                                    .slice(0, 3)
+                                    .map((prize: any, index: number) => {
+                                      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                                      const rankText = prize.rankStart === prize.rankEnd 
+                                        ? `${prize.rankStart}` 
+                                        : `${prize.rankStart}-${prize.rankEnd}`;
+                                      
+                                      return (
+                                        <div key={prize.id} className="flex items-center justify-between text-xs">
+                                          <span className="flex items-center gap-1">
+                                            <span>{medal}</span>
+                                            <span className="text-gray-600">Place {rankText}</span>
+                                          </span>
+                                          <span className="font-medium text-yellow-600">${prize.value}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  {prizes.length > 3 && (
+                                    <p className="text-xs text-gray-500 text-center pt-1">
+                                      +{prizes.length - 3} more prize{prizes.length - 3 !== 1 ? 's' : ''}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Difficulty and Action */}
                   <div className="flex items-center justify-between pt-2 border-t">
