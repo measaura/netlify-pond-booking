@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { AuthGuard } from '@/components/AuthGuard'
 import { useAuth } from '@/lib/auth'
+import { RankingScreen } from './RankingScreen'
 
 type KioskMode = 'locked' | 'unlocked'
 
@@ -23,6 +24,8 @@ export default function WeighingKioskPage() {
   const [weightData, setWeightData] = useState({ weight: '', notes: '' })
   const [isError, setIsError] = useState(false)
   const [rankingData, setRankingData] = useState<any>(null)
+  const [showRankingScreen, setShowRankingScreen] = useState(false)
+  const [lastSubmittedWeight, setLastSubmittedWeight] = useState(0)
   const scanInputRef = useRef<HTMLInputElement>(null)
 
   const unlockKiosk = () => {
@@ -38,6 +41,8 @@ export default function WeighingKioskPage() {
     setWeightData({ weight: '', notes: '' })
     setIsError(false)
     setRankingData(null)
+    setShowRankingScreen(false)
+    setLastSubmittedWeight(0)
     console.log('Weighing kiosk locked by', user?.name)
   }
 
@@ -147,25 +152,24 @@ export default function WeighingKioskPage() {
       
       if (data.ok) {
         const userName = userInfo.assignedUser?.name || 'Angler'
-        const weight = weightData.weight
+        const weight = parseFloat(weightData.weight)
         
-        // Set ranking data for display
+        // Set ranking data and show ranking screen
         if (data.data?.userRanking) {
-          setRankingData(data.data.userRanking)
+          setRankingData({
+            ...data.data.userRanking,
+            leaderboardSize: data.data.leaderboardSize
+          })
+          setLastSubmittedWeight(weight)
+          setShowRankingScreen(true)
         }
         
-        setResult(`🎉 Weight recorded! ${weight}kg catch has been logged for ${userName}. Great fishing!`)
-        
-        // Show ranking for 8 seconds, then reset
-        setTimeout(() => {
-          setScannedQrCode('')
-          setResult('')
-          setUserInfo(null)
-          setWeightData({ weight: '', notes: '' })
-          setIsError(false)
-          setRankingData(null)
-          scanInputRef.current?.focus()
-        }, 8000)
+        // Clear the form immediately
+        setUserInfo(null)
+        setWeightData({ weight: '', notes: '' })
+        setScannedQrCode('')
+        setResult('')
+        setIsError(false)
       } else {
         setResult(`❌ Error recording weight: ${data.error}`)
       }
@@ -182,8 +186,17 @@ export default function WeighingKioskPage() {
     setWeightData({ weight: '', notes: '' })
     setIsError(false)
     setRankingData(null)
+    setShowRankingScreen(false)
+    setLastSubmittedWeight(0)
     scanInputRef.current?.focus()
     console.log('Weighing cancelled by user')
+  }
+
+  const handleDismissRanking = () => {
+    setShowRankingScreen(false)
+    setRankingData(null)
+    setLastSubmittedWeight(0)
+    scanInputRef.current?.focus()
   }
 
   if (kioskMode === 'locked') {
@@ -350,37 +363,6 @@ export default function WeighingKioskPage() {
               </div>
             )}
 
-            {rankingData && (
-              <div className="space-y-4 p-6 bg-yellow-50 rounded-lg border-2 border-yellow-200">
-                <div className="text-center">
-                  <h3 className="text-2xl font-bold text-yellow-800">
-                    🏆 Your Current Ranking
-                  </h3>
-                  <p className="text-lg text-yellow-700 mt-2">
-                    You are ranked #{rankingData.rank} out of {rankingData.leaderboardSize || 'all'} anglers!
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-semibold text-gray-700">Total Catches:</span>
-                    <div className="text-lg">{rankingData.totalCatches}</div>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-700">Total Weight:</span>
-                    <div className="text-lg">{rankingData.totalWeight}kg</div>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-700">Biggest Catch:</span>
-                    <div className="text-lg font-bold text-yellow-600">{rankingData.biggestCatch}kg</div>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-700">Average Weight:</span>
-                    <div className="text-lg">{rankingData.averageWeight?.toFixed(2)}kg</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {!userInfo && (
               <Button 
                 onClick={() => handleValidateRod(scannedQrCode)}
@@ -403,6 +385,15 @@ export default function WeighingKioskPage() {
           Lock Station
         </Button>
       </div>
+
+      {/* Ranking Screen Overlay */}
+      <RankingScreen
+        isVisible={showRankingScreen}
+        userName={rankingData?.userName || userInfo?.assignedUser?.name || 'Angler'}
+        submittedWeight={lastSubmittedWeight}
+        rankingData={rankingData || {}}
+        onDismiss={handleDismissRanking}
+      />
     </AuthGuard>
   )
 }

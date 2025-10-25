@@ -23,7 +23,10 @@ export async function POST(request: Request) {
 
     // Get booking details to find user and event info
     const booking = await prisma.booking.findUnique({
-      where: { id: parseInt(bookingId) }
+      where: { id: parseInt(bookingId) },
+      include: {
+        bookedBy: true
+      }
     })
 
     if (!booking) {
@@ -57,7 +60,8 @@ export async function POST(request: Request) {
           totalCatches: userRanking?.totalFish || 1,
           totalWeight: userRanking?.totalWeight || weight,
           biggestCatch: userRanking?.biggestFish || weight,
-          averageWeight: userRanking?.averageWeight || weight
+          averageWeight: userRanking?.averageWeight || weight,
+          userName: booking.bookedBy?.name || 'Unknown User'
         },
         leaderboardSize: leaderboard.length
       },
