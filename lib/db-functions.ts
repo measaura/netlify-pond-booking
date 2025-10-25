@@ -846,7 +846,7 @@ export async function createEvent(eventData: {
   // Link event to games with prize sets
   if (eventGames && eventGames.length > 0) {
     await prisma.eventGame.createMany({
-      data: eventGames.map(eg => ({
+      data: eventGames.map((eg: any) => ({
         eventId: event.id,
         gameId: eg.gameId,
         prizeSetId: eg.prizeSetId,
@@ -1327,7 +1327,16 @@ export async function generateEventLeaderboard(eventId: number) {
   const catches = await getCatchRecords({ eventId })
 
   // Load event to get meta (games)
-  const event = await prisma.event.findUnique({ where: { id: eventId }, include: { games: true } })
+  const event = await prisma.event.findUnique({ 
+    where: { id: eventId }, 
+    include: { 
+      eventGames: {
+        include: {
+          game: true
+        }
+      }
+    } 
+  })
   if (!event) throw new Error('Event not found')
 
   const userStats: Record<number, any> = {}

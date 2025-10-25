@@ -6,7 +6,7 @@ Set these in your Railway project's **Variables** tab:
 
 ```bash
 DATABASE_URL=postgresql://postgres:PjOpTiGYjXyFSfPNFYpGfGQUKnOSwYLI@maglev.proxy.rlwy.net:59727/railway
-NEXTAUTH_SECRET=your-super-secret-auth-key-change-this-in-production-at-least-32-chars
+NEXTAUTH_SECRET=qNrFLw/irm/BV8n76XQr1/Q8oCaMP7RLJS+FkDmpsAg=
 NEXTAUTH_URL=https://your-railway-app-name.up.railway.app
 NODE_ENV=production
 ```
