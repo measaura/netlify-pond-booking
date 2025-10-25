@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { SimpleCalendar } from "@/components/ui/simple-calendar"
 import { 
   Calendar, 
   Plus, 
@@ -107,6 +108,79 @@ interface EventFormData {
     game?: Game
     prizeSet?: any
   }[]
+}
+
+// Custom DatePicker Component
+function DatePicker({ value, onChange, label, required }: { 
+  value: string, 
+  onChange: (date: string) => void, 
+  label: string,
+  required?: boolean 
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    value ? new Date(value) : undefined
+  )
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Close calendar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  const formatDateToDDMMYYYY = (date: Date) => {
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+
+  const formatDateToISO = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      setSelectedDate(date)
+      onChange(formatDateToISO(date))
+      setIsOpen(false) // Auto-close on selection
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="text-sm font-medium">{label}</label>
+      <Input
+        type="text"
+        value={selectedDate ? formatDateToDDMMYYYY(selectedDate) : ''}
+        placeholder="DD/MM/YYYY"
+        onFocus={() => setIsOpen(true)}
+        readOnly
+        required={required}
+        className="cursor-pointer"
+      />
+      {isOpen && (
+        <div className="absolute z-50 mt-1 bg-white border rounded-lg shadow-lg">
+          <SimpleCalendar
+            selected={selectedDate}
+            onSelect={handleDateSelect}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function EventsManagementPage() {
@@ -259,6 +333,21 @@ const handleEventSubmit = async (e: React.FormEvent) => {
   setIsLoading(true)
   
   try {
+    // Validate that at least one game is added
+    if (!eventFormData.eventGames || eventFormData.eventGames.length === 0) {
+      toast ? toast.push({ message: 'Please add at least one game to the event', variant: 'error' }) : window.alert('Please add at least one game to the event')
+      setIsLoading(false)
+      return
+    }
+
+    // Validate that all games have a prize set assigned
+    const gamesWithoutPrizes = eventFormData.eventGames.filter(eg => !eg.prizeSetId)
+    if (gamesWithoutPrizes.length > 0) {
+      toast ? toast.push({ message: 'All games must have a prize set assigned', variant: 'error' }) : window.alert('All games must have a prize set assigned')
+      setIsLoading(false)
+      return
+    }
+
     const finalEventData = {
       ...eventFormData,
       startDate: new Date(eventFormData.date + 'T' + eventFormData.startTime),
@@ -890,7 +979,16 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                     value={eventFormData.date}
                     onChange={(e) => setEventFormData(prev => ({ ...prev, date: e.target.value }))}
                     required
+                    className="[&::-webkit-calendar-picker-indicator]:cursor-pointer"
                   />
+                  {eventFormData.date && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {(() => {
+                        const [year, month, day] = eventFormData.date.split('-')
+                        return `${day}/${month}/${year}`
+                      })()}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium">Booking Opens</label>
@@ -899,7 +997,16 @@ const handleEventSubmit = async (e: React.FormEvent) => {
                     value={eventFormData.bookingOpens}
                     onChange={(e) => setEventFormData(prev => ({ ...prev, bookingOpens: e.target.value }))}
                     required
+                    className="[&::-webkit-calendar-picker-indicator]:cursor-pointer"
                   />
+                  {eventFormData.bookingOpens && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {(() => {
+                        const [year, month, day] = eventFormData.bookingOpens.split('-')
+                        return `${day}/${month}/${year}`
+                      })()}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -986,7 +1093,7 @@ const handleEventSubmit = async (e: React.FormEvent) => {
 
                 {eventFormData.eventGames.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    No games added yet. Click "Add Game" to get started.
+                    No games added yet. Click &quot;Add Game&quot; to get started.
                   </div>
                 )}
 

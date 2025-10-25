@@ -384,6 +384,18 @@ function ManagerDashboard() {
                   <span className="text-xs">Monitor</span>
                 </Button>
               </Link>
+              <Link href="/kiosk/checkin">
+                <Button variant="outline" className="w-full h-12 flex flex-col items-center gap-1 border-green-300 text-green-700 hover:bg-green-50">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="text-xs">Check-In Kiosk</span>
+                </Button>
+              </Link>
+              <Link href="/kiosk/weighing">
+                <Button variant="outline" className="w-full h-12 flex flex-col items-center gap-1 border-purple-300 text-purple-700 hover:bg-purple-50">
+                  <Trophy className="h-5 w-5" />
+                  <span className="text-xs">Weighing Station</span>
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

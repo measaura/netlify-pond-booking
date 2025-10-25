@@ -14,6 +14,7 @@ import {
   fetchAllBookings,
   fetchEvents
 } from "../../../lib/client-fetches"
+import { formatDate } from '@/lib/utils'
 import type { BookingData } from '@/types'
 
 export default function ManagerStatusPage() {
@@ -170,7 +171,7 @@ export default function ManagerStatusPage() {
                         <div className="mt-3 pt-3 border-t border-gray-100">
                           <div className="text-xs text-gray-500 mb-2">Next booking:</div>
                           <div className="text-sm">
-                            {new Date(upcomingBookings[0].date).toLocaleDateString()} • {upcomingBookings[0].timeSlot.time}
+                            {formatDate(upcomingBookings[0].date)} • {upcomingBookings[0].timeSlot.time}
                           </div>
                         </div>
                       )}
@@ -233,7 +234,7 @@ export default function ManagerStatusPage() {
                       <div className="mt-3 pt-3 border-t border-gray-100">
                         <div className="text-xs text-gray-500 mb-1">Event Date:</div>
                         <div className="text-sm">
-                          {new Date(event.date).toLocaleDateString()} • {event.startTime} - {event.endTime}
+                          {formatDate(event.date)} • {event.startTime} - {event.endTime}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           {/* Prize: {event.prize} • */} Entry Fee: ${event.entryFee}
@@ -281,7 +282,7 @@ export default function ManagerStatusPage() {
                       <div className="text-right">
                         <div className="text-sm">${booking.totalPrice}</div>
                         <div className="text-xs text-gray-500">
-                          {new Date(booking.createdAt).toLocaleDateString()}
+                          {formatDate(booking.createdAt)}
                         </div>
                       </div>
                     </div>

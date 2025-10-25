@@ -14,6 +14,7 @@ import {
   getAllBookings,
   deleteBooking,
 } from "@/lib/localStorage"
+import { formatDate } from '@/lib/utils'
 import type { Event, BookingData } from '@/types'
 
 interface Booking {
@@ -270,7 +271,7 @@ export default function ManagerEventBookingsPage() {
                           
                           <div className="flex items-center gap-2">
                             <Calendar className="h-3 w-3" />
-                            <span>{new Date(booking.date).toLocaleDateString()}</span>
+                            <span>{formatDate(booking.date)}</span>
                             <span className="text-gray-400">•</span>
                             <Clock className="h-3 w-3" />
                             <span>{booking.time}</span>

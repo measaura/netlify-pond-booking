@@ -16,8 +16,9 @@ const API_BASE = '/api/admin/games'
 
 interface GameFormData {
   name: string
-  type: 'heaviest' | 'nearest' | 'biggest' | 'other'
-  targetValue?: number
+  type: 'TARGET_WEIGHT' | 'EXACT_WEIGHT' | 'HEAVIEST_WEIGHT'
+  targetWeight?: number
+  targetDirection?: 'uptrend' | 'downtrend' | null
   measurementUnit: 'kg' | 'cm' | 'other'
   decimalPlaces?: number
   description: string
@@ -36,7 +37,7 @@ export default function GamesManagementPage() {
   const [editingGame, setEditingGame] = useState<Game | null>(null)
   const [formData, setFormData] = useState<GameFormData>({
     name: '',
-    type: 'heaviest',
+    type: 'HEAVIEST_WEIGHT',
     measurementUnit: 'kg',
     description: '',
     prizes: [],
@@ -71,14 +72,46 @@ export default function GamesManagementPage() {
     setIsLoading(true)
 
     try {
+      // Validate TARGET_WEIGHT games have required fields
+      if (formData.type === 'TARGET_WEIGHT') {
+        if (!formData.targetWeight) {
+          throw new Error('Target weight is required for TARGET_WEIGHT games')
+        }
+        if (!formData.targetDirection) {
+          throw new Error('Target direction is required for TARGET_WEIGHT games')
+        }
+      }
+      
+      // Validate EXACT_WEIGHT games have target weight
+      if (formData.type === 'EXACT_WEIGHT') {
+        if (!formData.targetWeight) {
+          throw new Error('Target weight is required for EXACT_WEIGHT games')
+        }
+      }
+
+      // Prepare data - only include fields that exist in the Game model
+      const gameData = {
+        name: formData.name,
+        type: formData.type,
+        targetWeight: formData.targetWeight,
+        targetDirection: formData.targetDirection,
+        measurementUnit: formData.measurementUnit,
+        decimalPlaces: formData.decimalPlaces,
+        description: formData.description,
+        isActive: formData.isActive
+      }
+
+      console.log('Submitting game data:', gameData)
+      console.log('Is editing?', !!editingGame)
+
       // Create or update via API
       if (editingGame) {
-        const res = await fetch(API_BASE, { method: 'PUT', body: JSON.stringify({ id: editingGame.id, ...formData }), headers: { 'Content-Type': 'application/json' } })
+        const res = await fetch(API_BASE, { method: 'PUT', body: JSON.stringify({ id: editingGame.id, ...gameData }), headers: { 'Content-Type': 'application/json' } })
         const json = await res.json()
         if (!json.ok) throw new Error(json.error || 'Failed to update game')
         toast ? toast.push({ message: 'Game updated successfully!', variant: 'success' }) : window.alert('Game updated successfully!')
       } else {
-        const res = await fetch(API_BASE, { method: 'POST', body: JSON.stringify(formData), headers: { 'Content-Type': 'application/json' } })
+        const res = await fetch(API_BASE, { method: 'POST', body: JSON.stringify(gameData), headers: { 'Content-Type': 'application/json' } })
         const json = await res.json()
         if (!json.ok) throw new Error(json.error || 'Failed to create game')
         toast ? toast.push({ message: 'Game created successfully!', variant: 'success' }) : window.alert('Game created successfully!')
@@ -98,8 +131,9 @@ export default function GamesManagementPage() {
   const resetForm = () => {
     setFormData({
       name: '',
-      type: 'heaviest',
+      type: 'HEAVIEST_WEIGHT',
       measurementUnit: 'kg',
+      decimalPlaces: 3,
       description: '',
       prizes: [],
       isActive: true,
@@ -128,7 +162,10 @@ export default function GamesManagementPage() {
                 <Button variant="ghost" size="sm" onClick={loadData} disabled={isLoading}>
                   <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(true)}>
+                <Button variant="outline" size="sm" onClick={() => {
+                  resetForm()
+                  setIsDialogOpen(true)
+                }}>
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
@@ -142,18 +179,10 @@ export default function GamesManagementPage() {
             {games.map(game => (
               <Card key={game.id}>
                 <CardContent className="p-4">
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-medium">{game.name}</h3>
                       <p className="text-sm text-gray-500">{game.description}</p>
-                      <div className="mt-2 space-y-1 text-sm">
-                        <div className='grid grid-cols-3 gap-2'>
-                          <div>Type: {game.type}</div>
-                          <div>Unit: {game.measurementUnit}</div>
-                          {game.targetValue && <div>Target: {game.targetValue} kg</div>}
-                        </div>
-                        {/* <div>Prize: {game.prizes.map(prize => prize.value).reduce((a, b) => a + b, 0) > 0 ? game.prizes.map(prize => prize.value).reduce((a, b) => a + b, 0) : 'No Prize'}</div> */}
-                      </div>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -163,8 +192,9 @@ export default function GamesManagementPage() {
                           setEditingGame(game)
                           setFormData({
                             name: game.name,
-                            type: game.type,
-                            targetValue: game.targetValue,
+                            type: (game as any).type || 'HEAVIEST_WEIGHT',
+                            targetWeight: (game as any).targetWeight,
+                            targetDirection: (game as any).targetDirection,
                             measurementUnit: game.measurementUnit,
                             decimalPlaces: game.decimalPlaces,
                             description: game.description,
@@ -201,6 +231,35 @@ export default function GamesManagementPage() {
                       </Button>
                     </div>
                   </div>
+                  
+                  {/* Game Details - Full Width */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium">Type:</span>{' '}
+                        {(game as any).type === 'HEAVIEST_WEIGHT' && 'Heaviest Weight'}
+                        {(game as any).type === 'TARGET_WEIGHT' && 'Target Weight'}
+                        {(game as any).type === 'EXACT_WEIGHT' && 'Exact Weight'}
+                      </div>
+                      <div className="text-gray-600">
+                        <span className="font-medium">Unit:</span> {game.measurementUnit}
+                      </div>
+                    </div>
+                    {(game as any).targetWeight && (
+                      <div className="bg-blue-50 p-2 rounded">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-blue-900">Target:</span>
+                          <span className="text-blue-700">{Number((game as any).targetWeight).toFixed(3)} kg</span>
+                        </div>
+                        {(game as any).targetDirection && (
+                          <div className="flex items-center justify-between text-xs mt-1">
+                            <span className="font-medium text-blue-900">Direction:</span>
+                            <span className="text-blue-700 capitalize">{(game as any).targetDirection}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -224,55 +283,105 @@ export default function GamesManagementPage() {
               </div>
               
               <div>
-                <label className="text-sm font-medium">Type</label>
+                <label className="text-sm font-medium">Game Type</label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
-                    type: e.target.value as Game['type']
+                    type: e.target.value as 'TARGET_WEIGHT' | 'EXACT_WEIGHT' | 'HEAVIEST_WEIGHT',
+                    // Reset target fields when changing type
+                    targetWeight: undefined,
+                    targetDirection: null
                   }))}
                   className="w-full px-3 py-2 border rounded-md"
                   required
                 >
-                  <option value="heaviest">Heaviest Catch</option>
-                  <option value="nearest">Nearest Weight</option>
-                  <option value="biggest">Biggest Size</option>
-                  <option value="other">Other</option>
+                  <option value="HEAVIEST_WEIGHT">Heaviest Weight</option>
+                  <option value="TARGET_WEIGHT">Target Weight</option>
+                  <option value="EXACT_WEIGHT">Exact Weight</option>
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Measurement Unit</label>
-                  <select
-                    value={formData.measurementUnit}
-                    onChange={(e) => setFormData(prev => ({ 
-                      ...prev, 
-                      measurementUnit: e.target.value as Game['measurementUnit']
-                    }))}
-                    className="w-full px-3 py-2 border rounded-md"
-                    required
-                  >
-                    <option value="kg">Kilograms (kg)</option>
-                    <option value="cm">Centimeters (cm)</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                
-                {formData.type === 'nearest' && (
-                  <div>
-                    <label className="text-sm font-medium">Target Value</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.targetValue}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        targetValue: parseFloat(e.target.value)
-                      }))}
-                    />
+              {/* Target Weight Configuration */}
+              {(formData.type === 'TARGET_WEIGHT' || formData.type === 'EXACT_WEIGHT') && (
+                <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-900">Target Weight Settings</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Target Weight (kg)</label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="e.g., 5.250"
+                        value={formData.targetWeight || ''}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === '') {
+                            setFormData(prev => ({ ...prev, targetWeight: undefined }))
+                          } else {
+                            const parsed = parseFloat(value)
+                            // Round to 3 decimal places
+                            const rounded = Math.round(parsed * 1000) / 1000
+                            setFormData(prev => ({ ...prev, targetWeight: rounded }))
+                          }
+                        }}
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Maximum 3 decimal places</p>
+                    </div>
+                    
+                    {formData.type === 'TARGET_WEIGHT' && (
+                      <div>
+                        <label className="text-sm font-medium">Target Direction</label>
+                        <select
+                          value={formData.targetDirection || ''}
+                          onChange={(e) => setFormData(prev => ({ 
+                            ...prev, 
+                            targetDirection: e.target.value as 'uptrend' | 'downtrend' || null
+                          }))}
+                          className="w-full px-3 py-2 border rounded-md"
+                          required
+                        >
+                          <option value="">Select direction</option>
+                          <option value="uptrend">Uptrend</option>
+                          <option value="downtrend">Downtrend</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
-                )}
+                  
+                  {formData.type === 'TARGET_WEIGHT' && (
+                    <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded space-y-1">
+                      <p><strong>Uptrend:</strong> Only catches ≥ target weight are ranked. Nearest to target wins.</p>
+                      <p><strong>Downtrend:</strong> Only catches ≤ target weight are ranked. Nearest to target wins.</p>
+                    </div>
+                  )}
+                  
+                  {formData.type === 'EXACT_WEIGHT' && (
+                    <div className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
+                      <p><strong>Exact Weight:</strong> Only catches that exactly match the target weight are valid. First to achieve it wins.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="text-sm font-medium">Measurement Unit</label>
+                <select
+                  value={formData.measurementUnit}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    measurementUnit: e.target.value as 'kg' | 'cm' | 'other'
+                  }))}
+                  className="w-full px-3 py-2 border rounded-md"
+                  required
+                >
+                  <option value="kg">Kilograms (kg)</option>
+                  <option value="cm">Centimeters (cm)</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
 
               <div>

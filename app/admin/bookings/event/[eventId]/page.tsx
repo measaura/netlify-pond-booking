@@ -10,6 +10,7 @@ import { AuthGuard } from "@/components/AuthGuard"
 import { AdminNavigation } from '@/components/AdminNavigation'
 import { useAuth } from '@/lib/auth'
 import { useToastSafe } from '@/components/ui/toast'
+import { formatDate } from '@/lib/utils'
 import { } from '@/lib/localStorage'
 import type { Event, BookingData } from '@/types'
 
@@ -155,7 +156,7 @@ export default function AdminEventBookingsPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Date</span>
                   <span className="font-semibold text-gray-900">
-                    {new Date(event.date).toLocaleDateString()}
+                    {formatDate(event.date)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
