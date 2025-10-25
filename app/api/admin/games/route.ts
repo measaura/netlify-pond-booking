@@ -13,9 +13,11 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    console.log('POST /api/admin/games - Received body:', JSON.stringify(body, null, 2))
     const created = await createGame(body)
     return NextResponse.json({ ok: true, data: created })
   } catch (error) {
+    console.error('POST /api/admin/games - Error:', error)
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
 }

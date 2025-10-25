@@ -20,9 +20,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+    console.log('POST /api/admin/events - Received body:', JSON.stringify(body, null, 2))
     const created = await createEvent(body)
+    console.log('POST /api/admin/events - Created event:', created?.id)
     return NextResponse.json({ ok: true, data: created })
   } catch (error) {
+    console.error('POST /api/admin/events - Error:', error)
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
 }

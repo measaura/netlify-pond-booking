@@ -24,6 +24,8 @@ model User {
   notifications      Notification[]
   rodPrintSessions   RodPrintSession[]
   weighingRecords    WeighingRecord[]
+  achievements       UserAchievement[]  // User's unlocked achievements
+  stats              UserStats?         // User's statistics
 }
 
 model Pond {
@@ -103,7 +105,9 @@ model BookingSeat {
   assignedName    String?
   assignedEmail   String?
   qrCode          String            @unique
-  status          String            @default("assigned")
+  status          String            @default("assigned")  // assigned, shared, checked-in, completed
+  sharedAt        DateTime?         // When seat was shared/assigned to another user
+  sharedBy        Int?              // Leader who shared the seat (bookedByUserId)
   checkedInAt     DateTime?
   createdAt       DateTime          @default(now())
   assignedUser    User?             @relation("AssignedSeats", fields: [assignedUserId], references: [id])
@@ -127,7 +131,8 @@ model Game {
   id              Int              @id @default(autoincrement())
   name            String           // Template name (e.g., "Heaviest Fish", "Target Weight Challenge")
   type            GameType
-  targetWeight    Float?
+  targetWeight    Float?           // Target weight for TARGET_WEIGHT or EXACT_WEIGHT types
+  targetDirection String?          // "uptrend" or "downtrend" for TARGET_WEIGHT ranking
   measurementUnit String           @default("kg")
   decimalPlaces   Int              @default(2)
   description     String?
@@ -159,6 +164,76 @@ model EventGame {
   isActive        Boolean     @default(true)
   
   @@unique([eventId, gameId])
+}
+
+// Achievement system models
+model Achievement {
+  id          Int                 @id @default(autoincrement())
+  name        String              // e.g., "First Catch"
+  description String              // e.g., "Caught your first fish"
+  icon        String              // Emoji or icon identifier
+  category    AchievementCategory // milestone, skill, loyalty, competitive, dedication, social
+  
+  // Unlock criteria
+  criteriaType   String           // e.g., "TOTAL_CATCHES", "BOOKING_COUNT", "POND_DIVERSITY"
+  criteriaValue  Int?             // Threshold value (e.g., 10 for "10 bookings")
+  
+  // Metadata
+  isActive    Boolean             @default(true)
+  displayOrder Int                @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  achievementId Int
+  unlockedAt    DateTime    @default(now())
+  progress      Int?        // Optional: track progress towards next level
+  
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement  Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, achievementId])
+}
+
+model UserStats {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @unique
+  
+  // Session statistics
+  totalSessions    Int      @default(0)
+  totalBookings    Int      @default(0)
+  
+  // Catch statistics
+  totalCatches     Int      @default(0)
+  biggestCatch     Float?   // Weight in kg
+  averageCatch     Float?   // Average weight
+  
+  // Event/Competition statistics
+  eventsJoined     Int      @default(0)
+  competitionsWon  Int      @default(0)
+  totalPrizeMoney  Float    @default(0)
+  
+  // Streaks and preferences
+  currentStreak    Int      @default(0)
+  longestStreak    Int      @default(0)
+  favoritePondId   Int?     // Most visited pond
+  
+  // Time-based stats
+  morningSlots     Int      @default(0) // Number of morning bookings
+  eveningSlots     Int      @default(0) // Number of evening bookings
+  
+  // Social stats
+  groupSessions    Int      @default(0) // Sessions with multiple seats
+  
+  // Metadata
+  lastUpdated      DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // NEW: Reusable prize sets (collections of prizes)
@@ -394,4 +469,13 @@ enum PondShape {
 enum PrizeType {
   MONEY
   ITEM
+}
+
+enum AchievementCategory {
+  MILESTONE
+  SKILL
+  LOYALTY
+  COMPETITIVE
+  DEDICATION
+  SOCIAL
 }

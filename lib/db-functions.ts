@@ -133,7 +133,7 @@ export async function getPondById(id: number) {
         include: {
           event: {
             include: {
-              games: true,
+              eventGames: true,
             }
           }
         }
@@ -225,9 +225,14 @@ export async function getBookingById(id: number) {
       pond: true,
       event: {
         include: {
-          games: {
+          eventGames: {
             include: {
-              prizes: true,
+              game: true,
+              prizeSet: {
+                include: {
+                  prizes: true,
+                }
+              }
             }
           }
         }
@@ -255,9 +260,14 @@ export async function getBookingByBookingId(bookingId: string) {
       pond: true,
       event: {
         include: {
-          games: {
+          eventGames: {
             include: {
-              prizes: true,
+              game: true,
+              prizeSet: {
+                include: {
+                  prizes: true,
+                }
+              }
             }
           }
         }
@@ -345,15 +355,27 @@ export async function createBooking(bookingData: {
 
     // Create seat assignments if provided (one-by-one inside transaction to generate qrCodes)
     if (seatAssignments && seatAssignments.length > 0) {
+      // Get user info for auto-assignment
+      const bookedByUser = await tx.user.findUnique({
+        where: { id: bookingData.bookedByUserId },
+        select: { id: true, name: true, email: true }
+      })
+      
       for (const seat of seatAssignments) {
+        // Auto-assign single seat to buyer if not already assigned
+        const shouldAutoAssign = seatAssignments.length === 1 && !seat.assignedUserId && bookedByUser
+        
         await tx.bookingSeat.create({
           data: {
             bookingId: booking.id,
             seatNumber: seat.seatNumber,
-            assignedUserId: seat.assignedUserId ?? undefined,
-            assignedName: seat.assignedName ?? undefined,
-            assignedEmail: seat.assignedEmail ?? undefined,
+            assignedUserId: shouldAutoAssign ? bookedByUser.id : (seat.assignedUserId ?? undefined),
+            assignedName: shouldAutoAssign ? bookedByUser.name : (seat.assignedName ?? undefined),
+            assignedEmail: shouldAutoAssign ? bookedByUser.email : (seat.assignedEmail ?? undefined),
             qrCode: `${bookingData.bookingId}_SEAT_${seat.seatNumber}_${Date.now()}`,
+            status: shouldAutoAssign ? 'shared' : 'assigned', // Mark as shared if auto-assigned
+            sharedAt: shouldAutoAssign ? new Date() : undefined,
+            sharedBy: shouldAutoAssign ? bookedByUser.id : undefined,
           }
         })
       }
@@ -588,17 +610,29 @@ export async function createGame(gameData: {
   type: string
   measurementUnit?: string
   targetWeight?: number
+  targetDirection?: string
   decimalPlaces?: number
   description?: string
   isActive?: boolean
 }) {
   // Games are now standalone templates - no eventId needed
-  return await prisma.game.create({ 
-    data: { 
-      ...gameData, 
-      isActive: gameData.isActive ?? true 
-    } as any 
-  })
+  // Filter out any unwanted fields that might have been passed
+  const { name, type, measurementUnit, targetWeight, targetDirection, decimalPlaces, description, isActive } = gameData
+  
+  // Build data object without undefined values
+  const data: any = {
+    name,
+    type,
+    isActive: isActive ?? true
+  }
+  
+  if (measurementUnit !== undefined) data.measurementUnit = measurementUnit
+  if (targetWeight !== undefined) data.targetWeight = targetWeight
+  if (targetDirection !== undefined) data.targetDirection = targetDirection
+  if (decimalPlaces !== undefined) data.decimalPlaces = decimalPlaces
+  if (description !== undefined) data.description = description
+  
+  return await prisma.game.create({ data })
 }
 
 export async function updateGame(id: number, gameData: Partial<any>) {
@@ -781,23 +815,28 @@ export async function createEvent(eventData: {
     isActive?: boolean
   }>
 }) {
-  const { pondIds, eventGames, ...eventDetails } = eventData
+  const { pondIds, eventGames, assignedPonds, startDate: startDateParam, endDate: endDateParam, id, ...eventDetails } = eventData as any
+
+  // Convert string dates to Date objects if needed
+  const startDate = typeof startDateParam === 'string' ? new Date(startDateParam) : startDateParam
+  const endDate = typeof endDateParam === 'string' ? new Date(endDateParam) : endDateParam
+  const bookingOpens = (eventData as any).bookingOpens ? (typeof (eventData as any).bookingOpens === 'string' ? new Date((eventData as any).bookingOpens) : (eventData as any).bookingOpens) : new Date()
 
   const event = await prisma.event.create({
     data: {
       ...eventDetails,
-      date: eventDetails.startDate,
-      startTime: eventDetails.startDate.toTimeString().split(' ')[0],
-      endTime: eventDetails.endDate.toTimeString().split(' ')[0],
+      date: startDate,
+      startTime: startDate.toTimeString().split(' ')[0],
+      endTime: endDate.toTimeString().split(' ')[0],
       maxSeatsPerBooking: 6,
-      bookingOpens: new Date(),
+      bookingOpens,
     } as any,
   })
 
   // Link event to ponds
   if (pondIds.length > 0) {
     await prisma.eventPond.createMany({
-      data: pondIds.map(pondId => ({
+      data: pondIds.map((pondId: number) => ({
         eventId: event.id,
         pondId,
       }))
@@ -1024,9 +1063,16 @@ export async function recordCatch(catchData: {
   recordedBy: string
   notes?: string
 }) {
-  return await prisma.catchRecord.create({
+  const catchRecord = await prisma.catchRecord.create({
     data: catchData,
   })
+
+  // Update stats and check achievements if weight is recorded
+  if (catchData.weight && catchData.userId) {
+    await updateStatsAfterCatch(catchData.userId, catchData.weight)
+  }
+
+  return catchRecord
 }
 
 export async function getCatchRecords(filters?: {
@@ -1318,7 +1364,7 @@ export async function generateEventLeaderboard(eventId: number) {
   return {
     eventId,
     eventName: event.name,
-    gameId: event.games && event.games[0] ? event.games[0].id : null,
+    gameId: null, // Will be set based on game type later
     entries,
     lastUpdated: new Date().toISOString()
   }
@@ -1389,6 +1435,202 @@ export const getAllPonds = getPonds
 export const getAllEvents = getEvents
 export const getAllTimeSlots = getTimeSlots
 export const getAllBookings = () => getBookings()
+
+// ============================================================================
+// ACHIEVEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * Check and unlock achievements for a user based on their current stats
+ */
+export async function checkAndUnlockAchievements(userId: number) {
+  try {
+    // Get user stats
+    const stats = await prisma.userStats.findUnique({
+      where: { userId },
+    })
+
+    if (!stats) {
+      console.log(`No stats found for user ${userId}`)
+      return []
+    }
+
+    // Get all achievements
+    const allAchievements = await prisma.achievement.findMany({
+      where: { isActive: true },
+    })
+
+    // Get already unlocked achievements
+    const unlockedAchievementIds = await prisma.userAchievement.findMany({
+      where: { userId },
+      select: { achievementId: true },
+    })
+
+    const unlockedIds = new Set(unlockedAchievementIds.map(ua => ua.achievementId))
+    const newlyUnlocked = []
+
+    // Check each achievement
+    for (const achievement of allAchievements) {
+      // Skip if already unlocked
+      if (unlockedIds.has(achievement.id)) continue
+
+      let shouldUnlock = false
+
+      // Check criteria based on type
+      switch (achievement.criteriaType) {
+        case 'TOTAL_CATCHES':
+          shouldUnlock = stats.totalCatches >= (achievement.criteriaValue || 0)
+          break
+        case 'TOTAL_BOOKINGS':
+          shouldUnlock = stats.totalBookings >= (achievement.criteriaValue || 0)
+          break
+        case 'EVENTS_JOINED':
+          shouldUnlock = stats.eventsJoined >= (achievement.criteriaValue || 0)
+          break
+        case 'BIGGEST_CATCH':
+          shouldUnlock = (stats.biggestCatch || 0) >= (achievement.criteriaValue || 0)
+          break
+        case 'COMPETITIONS_WON':
+          shouldUnlock = stats.competitionsWon >= (achievement.criteriaValue || 0)
+          break
+        case 'TOTAL_PRIZE_MONEY':
+          shouldUnlock = stats.totalPrizeMoney >= (achievement.criteriaValue || 0)
+          break
+        case 'MORNING_SLOTS':
+          shouldUnlock = stats.morningSlots >= (achievement.criteriaValue || 0)
+          break
+        case 'EVENING_SLOTS':
+          shouldUnlock = stats.eveningSlots >= (achievement.criteriaValue || 0)
+          break
+        case 'CURRENT_STREAK':
+          shouldUnlock = stats.currentStreak >= (achievement.criteriaValue || 0)
+          break
+        case 'GROUP_SESSIONS':
+          shouldUnlock = stats.groupSessions >= (achievement.criteriaValue || 0)
+          break
+        // Add more criteria types as needed
+        default:
+          console.log(`Unknown criteria type: ${achievement.criteriaType}`)
+      }
+
+      // Unlock the achievement
+      if (shouldUnlock) {
+        await prisma.userAchievement.create({
+          data: {
+            userId,
+            achievementId: achievement.id,
+          },
+        })
+        newlyUnlocked.push(achievement)
+      }
+    }
+
+    return newlyUnlocked
+  } catch (error) {
+    console.error('Error checking achievements:', error)
+    return []
+  }
+}
+
+/**
+ * Update user stats after a booking is created
+ */
+export async function updateStatsAfterBooking(userId: number, booking: any) {
+  try {
+    const stats = await prisma.userStats.upsert({
+      where: { userId },
+      create: {
+        userId,
+        totalBookings: 1,
+        totalSessions: 0,
+        totalCatches: 0,
+        eventsJoined: booking.type === 'EVENT' ? 1 : 0,
+        competitionsWon: 0,
+        totalPrizeMoney: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        morningSlots: booking.timeSlotId && booking.timeSlotId <= 3 ? 1 : 0,
+        eveningSlots: booking.timeSlotId && booking.timeSlotId >= 4 ? 1 : 0,
+        groupSessions: booking.seatsBooked > 1 ? 1 : 0,
+      },
+      update: {
+        totalBookings: { increment: 1 },
+        eventsJoined: booking.type === 'EVENT' ? { increment: 1 } : undefined,
+        morningSlots: booking.timeSlotId && booking.timeSlotId <= 3 ? { increment: 1 } : undefined,
+        eveningSlots: booking.timeSlotId && booking.timeSlotId >= 4 ? { increment: 1 } : undefined,
+        groupSessions: booking.seatsBooked > 1 ? { increment: 1 } : undefined,
+        lastUpdated: new Date(),
+      },
+    })
+
+    // Check for newly unlocked achievements
+    const newAchievements = await checkAndUnlockAchievements(userId)
+    
+    return { stats, newAchievements }
+  } catch (error) {
+    console.error('Error updating stats after booking:', error)
+    return { stats: null, newAchievements: [] }
+  }
+}
+
+/**
+ * Update user stats after a catch is recorded
+ */
+export async function updateStatsAfterCatch(userId: number, catchWeight: number) {
+  try {
+    const currentStats = await prisma.userStats.findUnique({
+      where: { userId },
+    })
+
+    const updates: any = {
+      totalCatches: { increment: 1 },
+      lastUpdated: new Date(),
+    }
+
+    // Update biggest catch if this one is bigger
+    if (!currentStats?.biggestCatch || catchWeight > currentStats.biggestCatch) {
+      updates.biggestCatch = catchWeight
+    }
+
+    // Recalculate average catch
+    if (currentStats) {
+      const totalWeight = ((currentStats.averageCatch || 0) * currentStats.totalCatches) + catchWeight
+      const newTotal = currentStats.totalCatches + 1
+      updates.averageCatch = totalWeight / newTotal
+    } else {
+      updates.averageCatch = catchWeight
+    }
+
+    const stats = await prisma.userStats.upsert({
+      where: { userId },
+      create: {
+        userId,
+        totalBookings: 0,
+        totalSessions: 0,
+        totalCatches: 1,
+        biggestCatch: catchWeight,
+        averageCatch: catchWeight,
+        eventsJoined: 0,
+        competitionsWon: 0,
+        totalPrizeMoney: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        morningSlots: 0,
+        eveningSlots: 0,
+        groupSessions: 0,
+      },
+      update: updates,
+    })
+
+    // Check for newly unlocked achievements
+    const newAchievements = await checkAndUnlockAchievements(userId)
+    
+    return { stats, newAchievements }
+  } catch (error) {
+    console.error('Error updating stats after catch:', error)
+    return { stats: null, newAchievements: [] }
+  }
+}
 
 // Close Prisma connection when the module is unloaded
 process.on('beforeExit', async () => {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createBooking, generateUniqueBookingId, getBookingById, getBookingByBookingId, getBookings, cancelBooking } from '@/lib/db-functions'
+import { createBooking, generateUniqueBookingId, getBookingById, getBookingByBookingId, getBookings, cancelBooking, updateStatsAfterBooking } from '@/lib/db-functions'
+import prisma from '@/lib/db-functions'
 
 // Transform database booking to match client BookingData interface
 function transformBooking(booking: any) {
@@ -57,7 +58,34 @@ export async function POST(request: Request) {
     }
 
     const result = await createBooking(bookingData)
-    return NextResponse.json({ ok: true, data: result })
+
+    // Update stats and check for achievements
+    const achievementResult = await updateStatsAfterBooking(body.bookedByUserId, result)
+    const unlockedAchievements = achievementResult?.newAchievements || []
+
+    // Create notifications for newly unlocked achievements
+    if (unlockedAchievements.length > 0) {
+      await Promise.all(
+        unlockedAchievements.map((achievement: any) =>
+          prisma.notification.create({
+            data: {
+              userId: body.bookedByUserId,
+              type: 'ACHIEVEMENT',
+              title: '🎉 Achievement Unlocked!',
+              message: `${achievement.name}: ${achievement.description}`,
+              actionUrl: '/journey',
+              priority: 'high',
+            },
+          })
+        )
+      )
+    }
+
+    return NextResponse.json({ 
+      ok: true, 
+      data: result,
+      achievements: unlockedAchievements 
+    })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || 'Failed to create booking' }, { status: 500 })
   }
@@ -81,7 +109,44 @@ export async function GET(request: Request) {
     }
 
     if (userId) {
-      const bookings = await getBookings({ userId: parseInt(userId) })
+      const userIdNum = parseInt(userId)
+      
+      // Get bookings where user is the leader OR has an assigned seat
+      const bookings = await prisma.booking.findMany({
+        where: {
+          OR: [
+            { bookedByUserId: userIdNum }, // Bookings created by user
+            { seatAssignments: { some: { assignedUserId: userIdNum } } } // Bookings with seats assigned to user
+          ]
+        },
+        include: {
+          bookedBy: true,
+          pond: true,
+          event: {
+            include: {
+              eventGames: {
+                include: {
+                  game: true,
+                  prizeSet: {
+                    include: {
+                      prizes: true,
+                    }
+                  }
+                }
+              }
+            }
+          },
+          timeSlot: true,
+          seatAssignments: {
+            include: {
+              assignedUser: true,
+              fishingRod: true,
+            }
+          },
+        },
+        orderBy: { date: 'asc' }
+      })
+      
       const transformed = bookings.map(transformBooking)
       return NextResponse.json({ ok: true, data: transformed })
     }

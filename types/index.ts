@@ -23,6 +23,17 @@ export interface BookingData {
     row: string
     number: number
   }>
+  // New seat assignments structure (from BookingSeat model)
+  seatAssignments?: Array<{
+    id: number
+    seatNumber: number
+    assignedUserId?: number | null
+    assignedName?: string | null
+    assignedEmail?: string | null
+    qrCode: string
+    status: string
+    checkedInAt?: string | null
+  }>
   timeSlot: {
     id: number
     time: string

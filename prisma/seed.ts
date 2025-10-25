@@ -107,6 +107,8 @@ async function main() {
   nextMonth.setDate(1) // First day of next month
   
   // Clear existing events, games, prizes to allow fresh data
+  await prisma.leaderboardEntry.deleteMany({})
+  await prisma.eventLeaderboard.deleteMany({})
   await prisma.prize.deleteMany({})
   await prisma.game.deleteMany({})
   await prisma.eventPond.deleteMany({})
@@ -164,9 +166,9 @@ async function main() {
     })
   }
 
-  // 6. Seed games linked to events
-  console.log('Seeding games...')
-  const game1 = await prisma.game.upsert({
+  // 6. Seed game templates (no eventId - they're reusable now)
+  console.log('Seeding game templates...')
+  await prisma.game.upsert({
     where: { id: 1 },
     update: {},
     create: {
@@ -174,13 +176,13 @@ async function main() {
       name: 'Heaviest Fish',
       type: GameType.HEAVIEST_WEIGHT,
       measurementUnit: 'kg',
-      decimalPlaces: 2,
+      decimalPlaces: 3,
       description: 'Catch the heaviest fish to win',
-      eventId: 1,
+      isActive: true,
     },
   })
 
-  const game2 = await prisma.game.upsert({
+  await prisma.game.upsert({
     where: { id: 2 },
     update: {},
     create: {
@@ -188,38 +190,86 @@ async function main() {
       name: 'Target Weight Challenge',
       type: GameType.TARGET_WEIGHT,
       targetWeight: 2.5,
+      targetDirection: 'uptrend',
       measurementUnit: 'kg',
-      decimalPlaces: 2,
-      description: 'Get as close as possible to 2.5kg',
-      eventId: 1,
+      decimalPlaces: 3,
+      description: 'Get as close as possible to 2.5kg (closest wins)',
+      isActive: true,
     },
   })
 
-  const game3 = await prisma.game.upsert({
+  await prisma.game.upsert({
     where: { id: 3 },
     update: {},
     create: {
       id: 3,
-      name: 'New Year Biggest Catch',
-      type: GameType.HEAVIEST_WEIGHT,
+      name: 'Exact Weight',
+      type: GameType.EXACT_WEIGHT,
+      targetWeight: 1.5,
       measurementUnit: 'kg',
-      decimalPlaces: 2,
-      description: 'Start the year with the biggest catch',
-      eventId: 2,
+      decimalPlaces: 3,
+      description: 'Hit exactly 1.5kg',
+      isActive: true,
     },
   })
 
-  // 7. Seed prizes for games
+  // 7. Create prize sets
+  console.log('Creating prize sets...')
+  const prizeSet1 = await prisma.prizeSet.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      name: 'Standard Podium',
+      description: 'Top 3 winners with prize pool',
+      isActive: true,
+    },
+  })
+
+  const prizeSet2 = await prisma.prizeSet.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      id: 2,
+      name: 'Big Pool',
+      description: 'Large event with top 10 prizes',
+      isActive: true,
+    },
+  })
+
+  // 8. Seed prizes for prize sets
   console.log('Seeding prizes...')
-  // Prizes for Game 1 (Heaviest Fish)
-  const game1Prizes = [
-    { rank: [1, 1], value: 5000, name: '1st Place - Heaviest Fish' },
-    { rank: [2, 2], value: 3000, name: '2nd Place - Heaviest Fish' },
-    { rank: [3, 3], value: 1500, name: '3rd Place - Heaviest Fish' },
-    { rank: [4, 10], value: 500, name: '4th-10th Place - Heaviest Fish' },
+  
+  // Prizes for PrizeSet 1 (Standard Podium)
+  const prizeSet1Prizes = [
+    { rank: [1, 1], value: 5000, name: '1st Place' },
+    { rank: [2, 2], value: 3000, name: '2nd Place' },
+    { rank: [3, 3], value: 1500, name: '3rd Place' },
   ]
 
-  for (const prizeData of game1Prizes) {
+  for (const prizeData of prizeSet1Prizes) {
+    await prisma.prize.create({
+      data: {
+        name: prizeData.name,
+        type: PrizeType.MONEY,
+        value: prizeData.value,
+        rankStart: prizeData.rank[0],
+        rankEnd: prizeData.rank[1],
+        description: `Prize for rank ${prizeData.rank[0]}`,
+        prizeSetId: 1,
+      },
+    })
+  }
+
+  // Prizes for PrizeSet 2 (Big Pool)
+  const prizeSet2Prizes = [
+    { rank: [1, 1], value: 10000, name: 'Grand Prize' },
+    { rank: [2, 2], value: 5000, name: '2nd Prize' },
+    { rank: [3, 3], value: 2500, name: '3rd Prize' },
+    { rank: [4, 10], value: 1000, name: '4th-10th Place' },
+  ]
+
+  for (const prizeData of prizeSet2Prizes) {
     await prisma.prize.create({
       data: {
         name: prizeData.name,
@@ -228,55 +278,130 @@ async function main() {
         rankStart: prizeData.rank[0],
         rankEnd: prizeData.rank[1],
         description: `Prize for ranks ${prizeData.rank[0]} to ${prizeData.rank[1]}`,
-        gameId: 1,
+        prizeSetId: 2,
       },
     })
   }
 
-  // Prizes for Game 2 (Target Weight)
-  const game2Prizes = [
-    { rank: [1, 1], value: 2000, name: '1st Place - Target Weight' },
-    { rank: [2, 2], value: 1000, name: '2nd Place - Target Weight' },
-    { rank: [3, 5], value: 500, name: '3rd-5th Place - Target Weight' },
+  // 9. Link games to events via EventGame junction table
+  console.log('Linking games to events...')
+  
+  // Event 1 - Weekend Championship uses Game 1 (Heaviest) with PrizeSet 1
+  await prisma.eventGame.create({
+    data: {
+      eventId: 1,
+      gameId: 1,
+      prizeSetId: 1,
+      displayOrder: 1,
+      isActive: true,
+    },
+  })
+
+  // Event 1 - Weekend Championship also uses Game 2 (Target Weight) with PrizeSet 1
+  await prisma.eventGame.create({
+    data: {
+      eventId: 1,
+      gameId: 2,
+      prizeSetId: 1,
+      customGameName: 'Weekend Target Challenge', // Custom name for this event
+      displayOrder: 2,
+      isActive: true,
+    },
+  })
+
+  // Event 2 - New Year Festival uses Game 1 (Heaviest) with PrizeSet 2 (bigger prizes)
+  await prisma.eventGame.create({
+    data: {
+      eventId: 2,
+      gameId: 1,
+      prizeSetId: 2,
+      customGameName: 'New Year Grand Tournament',
+      displayOrder: 1,
+      isActive: true,
+    },
+  })
+
+  // 8. Seed achievements
+  console.log('Seeding achievements...')
+  
+  const achievements = [
+    // Milestone achievements
+    { name: 'First Catch', description: 'Caught your first fish', icon: '🎣', category: 'MILESTONE', criteriaType: 'TOTAL_CATCHES', criteriaValue: 1, order: 1 },
+    { name: 'First Booking', description: 'Made your first booking', icon: '📅', category: 'MILESTONE', criteriaType: 'TOTAL_BOOKINGS', criteriaValue: 1, order: 2 },
+    { name: 'First Event', description: 'Joined your first event', icon: '🎪', category: 'MILESTONE', criteriaType: 'EVENTS_JOINED', criteriaValue: 1, order: 3 },
+    
+    // Skill achievements
+    { name: 'Big Catch', description: 'Caught a fish over 3kg', icon: '🐟', category: 'SKILL', criteriaType: 'BIGGEST_CATCH', criteriaValue: 3, order: 4 },
+    { name: 'Giant Catch', description: 'Caught a fish over 5kg', icon: '🐋', category: 'SKILL', criteriaType: 'BIGGEST_CATCH', criteriaValue: 5, order: 5 },
+    { name: 'Master Angler', description: 'Caught fish in all ponds', icon: '👑', category: 'SKILL', criteriaType: 'POND_DIVERSITY', criteriaValue: 4, order: 6 },
+    { name: 'Perfect Session', description: 'Complete a session with 5+ catches', icon: '✨', category: 'SKILL', criteriaType: 'SESSION_CATCHES', criteriaValue: 5, order: 7 },
+    
+    // Loyalty achievements
+    { name: 'Regular Visitor', description: 'Made 10 bookings', icon: '⭐', category: 'LOYALTY', criteriaType: 'TOTAL_BOOKINGS', criteriaValue: 10, order: 8 },
+    { name: 'Loyal Member', description: 'Made 25 bookings', icon: '💎', category: 'LOYALTY', criteriaType: 'TOTAL_BOOKINGS', criteriaValue: 25, order: 9 },
+    { name: 'Legend', description: 'Made 50 bookings', icon: '🏅', category: 'LOYALTY', criteriaType: 'TOTAL_BOOKINGS', criteriaValue: 50, order: 10 },
+    
+    // Competitive achievements
+    { name: 'Competition Winner', description: 'Won a fishing competition', icon: '🏆', category: 'COMPETITIVE', criteriaType: 'COMPETITIONS_WON', criteriaValue: 1, order: 11 },
+    { name: 'Champion', description: 'Won 3 competitions', icon: '👑', category: 'COMPETITIVE', criteriaType: 'COMPETITIONS_WON', criteriaValue: 3, order: 12 },
+    { name: 'Prize Winner', description: 'Won RM1000 in prizes', icon: '💰', category: 'COMPETITIVE', criteriaType: 'TOTAL_PRIZE_MONEY', criteriaValue: 1000, order: 13 },
+    
+    // Dedication achievements
+    { name: 'Early Bird', description: 'Booked 5 morning slots', icon: '🌅', category: 'DEDICATION', criteriaType: 'MORNING_SLOTS', criteriaValue: 5, order: 14 },
+    { name: 'Night Fisher', description: 'Complete 3 evening sessions', icon: '🌙', category: 'DEDICATION', criteriaType: 'EVENING_SLOTS', criteriaValue: 3, order: 15 },
+    { name: 'Streak Master', description: 'Maintain a 7-day streak', icon: '🔥', category: 'DEDICATION', criteriaType: 'CURRENT_STREAK', criteriaValue: 7, order: 16 },
+    { name: 'Seasonal Master', description: 'Fish in all four seasons', icon: '🍂', category: 'DEDICATION', criteriaType: 'SEASONS_FISHED', criteriaValue: 4, order: 17 },
+    
+    // Social achievements
+    { name: 'Social Angler', description: 'Book 5 group sessions', icon: '👥', category: 'SOCIAL', criteriaType: 'GROUP_SESSIONS', criteriaValue: 5, order: 18 },
+    { name: 'Party Leader', description: 'Book 10 group sessions', icon: '🎉', category: 'SOCIAL', criteriaType: 'GROUP_SESSIONS', criteriaValue: 10, order: 19 },
+    { name: 'Community Builder', description: 'Book 20 group sessions', icon: '🤝', category: 'SOCIAL', criteriaType: 'GROUP_SESSIONS', criteriaValue: 20, order: 20 },
   ]
 
-  for (const prizeData of game2Prizes) {
-    await prisma.prize.create({
-      data: {
-        name: prizeData.name,
-        type: PrizeType.MONEY,
-        value: prizeData.value,
-        rankStart: prizeData.rank[0],
-        rankEnd: prizeData.rank[1],
-        description: `Prize for ranks ${prizeData.rank[0]} to ${prizeData.rank[1]}`,
-        gameId: 2,
+  for (let i = 0; i < achievements.length; i++) {
+    const ach = achievements[i]
+    await prisma.achievement.upsert({
+      where: { id: i + 1 },
+      update: {},
+      create: {
+        id: i + 1,
+        name: ach.name,
+        description: ach.description,
+        icon: ach.icon,
+        category: ach.category as any,
+        criteriaType: ach.criteriaType,
+        criteriaValue: ach.criteriaValue,
+        displayOrder: ach.order,
+        isActive: true,
       },
     })
   }
 
-  // Prizes for Game 3 (New Year)
-  const game3Prizes = [
-    { rank: [1, 1], value: 10000, name: 'New Year Grand Prize' },
-    { rank: [2, 2], value: 5000, name: 'New Year 2nd Prize' },
-    { rank: [3, 3], value: 2500, name: 'New Year 3rd Prize' },
-    { rank: [4, 20], value: 1000, name: 'New Year Participation Prize' },
-  ]
-
-  for (const prizeData of game3Prizes) {
-    await prisma.prize.create({
-      data: {
-        name: prizeData.name,
-        type: PrizeType.MONEY,
-        value: prizeData.value,
-        rankStart: prizeData.rank[0],
-        rankEnd: prizeData.rank[1],
-        description: `Prize for ranks ${prizeData.rank[0]} to ${prizeData.rank[1]}`,
-        gameId: 3,
+  // 9. Initialize user stats for existing users
+  console.log('Initializing user stats...')
+  const allUsers = await prisma.user.findMany()
+  for (const user of allUsers) {
+    await prisma.userStats.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        totalSessions: 0,
+        totalBookings: 0,
+        totalCatches: 0,
+        eventsJoined: 0,
+        competitionsWon: 0,
+        totalPrizeMoney: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        morningSlots: 0,
+        eveningSlots: 0,
+        groupSessions: 0,
       },
     })
   }
 
-  // 8. Create some sample bookings with dynamic dates
+  // 10. Create some sample bookings with dynamic dates
   console.log('Seeding sample bookings...')
   const users = await prisma.user.findMany({ where: { role: UserRole.USER } })
   
@@ -405,6 +530,8 @@ async function main() {
   console.log('- 4+ ponds with proper capacity and shape settings')
   console.log('- 1 admin, 1 manager, 5 regular users')
   console.log('- 2 open events (bookable) with multiple games and rank-based prizes')
+  console.log('- 20 achievements across 6 categories')
+  console.log('- User stats initialized for all users')
   console.log('- Sample bookings for tomorrow (ponds available today!)')
   console.log('- 7 sample catch records for leaderboard testing')
 }
