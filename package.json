@@ -4,10 +4,21 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 --turbopack",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "bunx tsc --noEmit && next lint",
-    "format": "bunx biome format --write"
+    "format": "bunx biome format --write",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:reset": "prisma migrate reset --force",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "railway:migrate": "DATABASE_URL=$RAILWAY_DATABASE_URL prisma migrate deploy",
+    "railway:seed": "DATABASE_URL=$RAILWAY_DATABASE_URL prisma db seed",
+    "railway:push": "DATABASE_URL=$RAILWAY_DATABASE_URL prisma db push",
+    "railway:studio": "DATABASE_URL=$RAILWAY_DATABASE_URL prisma studio"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
