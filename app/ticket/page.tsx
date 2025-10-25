@@ -72,7 +72,8 @@ function TicketContent() {
       if (currentBooking) {
         setBookingData(currentBooking)
 
-        // Generate QR code with the booking data
+        // For bookings with seat assignments, show message to use seat sharing page
+        // Otherwise generate a simple QR code with booking info
         if (currentBooking.pond && currentBooking.pond.name && currentBooking.seats) {
           const qrData = JSON.stringify({
             bookingId: currentBooking.bookingId,

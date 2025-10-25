@@ -14,11 +14,22 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { getEvents } from '@/lib/db-functions'
+import { formatDate } from '@/lib/utils'
 import type { Event, EventLeaderboard, LeaderboardEntry } from '@/types'
+
+interface LeaderboardEntryWithAchievements extends LeaderboardEntry {
+  achievements?: Array<{
+    id: number
+    name: string
+    icon: string
+  }>
+  achievementCount?: number
+}
 
 function OverallLeaderboard() {
   const { user } = useAuth()
-  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntryWithAchievements[]>([])
+  const [sortBy, setSortBy] = useState<'weight' | 'achievements'>('weight')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -39,7 +50,30 @@ function OverallLeaderboard() {
         const lbJson = await lbRes.json()
         if (lbJson.ok && mounted) {
           const entries = Array.isArray(lbJson.data) ? lbJson.data : (lbJson.data?.entries || [])
-          setOverallLeaderboard(entries)
+          
+          // Fetch achievements for each user
+          const entriesWithAchievements = await Promise.all(
+            entries.map(async (entry: LeaderboardEntry) => {
+              try {
+                const achRes = await fetch(`/api/user/${entry.userId}/achievements`)
+                const achJson = await achRes.json()
+                const userAchievements = Array.isArray(achJson) ? achJson : []
+                return {
+                  ...entry,
+                  achievements: userAchievements.slice(0, 3).map((ua: any) => ({
+                    id: ua.achievement.id,
+                    name: ua.achievement.name,
+                    icon: ua.achievement.icon
+                  })),
+                  achievementCount: userAchievements.length
+                }
+              } catch {
+                return { ...entry, achievements: [], achievementCount: 0 }
+              }
+            })
+          )
+          
+          setOverallLeaderboard(entriesWithAchievements)
         }
       } catch (error) {
         console.error('Error loading overall leaderboard:', error)
@@ -83,19 +117,50 @@ function OverallLeaderboard() {
       {/* Leaderboard Header */}
       <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200">
         <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Trophy className="h-5 w-5 text-yellow-600" />
-            <h3 className="font-semibold text-gray-900">Global Rankings</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Trophy className="h-5 w-5 text-yellow-600" />
+                <h3 className="font-semibold text-gray-900">Global Rankings</h3>
+              </div>
+              <p className="text-sm text-gray-600">
+                Top anglers across all events and sessions
+              </p>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Button
+                size="sm"
+                variant={sortBy === 'weight' ? 'default' : 'outline'}
+                onClick={() => setSortBy('weight')}
+                className="text-xs"
+              >
+                <Fish className="h-3 w-3 mr-1" />
+                Weight
+              </Button>
+              <Button
+                size="sm"
+                variant={sortBy === 'achievements' ? 'default' : 'outline'}
+                onClick={() => setSortBy('achievements')}
+                className="text-xs"
+              >
+                <Award className="h-3 w-3 mr-1" />
+                Awards
+              </Button>
+            </div>
           </div>
-          <p className="text-sm text-gray-600">
-            Top anglers across all events and sessions
-          </p>
         </CardContent>
       </Card>
 
       {/* Leaderboard */}
       <div className="space-y-3">
-        {overallLeaderboard.map((entry, index) => {
+        {[...overallLeaderboard]
+          .sort((a, b) => {
+            if (sortBy === 'achievements') {
+              return (b.achievementCount || 0) - (a.achievementCount || 0)
+            }
+            return b.totalWeight - a.totalWeight
+          })
+          .map((entry, index) => {
           const isCurrentUser = entry.userId === user?.id
           return (
             <Card key={entry.userId} className={`${isCurrentUser ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}>
@@ -139,6 +204,24 @@ function OverallLeaderboard() {
                         <div className="font-medium text-orange-600">{entry.biggestFish.toFixed(1)}kg</div>
                       </div>
                     </div>
+
+                    {/* Achievements Display */}
+                    {entry.achievements && entry.achievements.length > 0 && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="flex gap-1">
+                          {entry.achievements.map(ach => (
+                            <span key={ach.id} className="text-lg" title={ach.name}>
+                              {ach.icon}
+                            </span>
+                          ))}
+                        </div>
+                        {(entry.achievementCount || 0) > 3 && (
+                          <span className="text-xs text-gray-500">
+                            +{(entry.achievementCount || 0) - 3} more
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -403,7 +486,7 @@ function PastEventLeaderboards() {
                 >
                   <div className="font-medium text-gray-900">{event.name}</div>
                   <div className="text-sm text-gray-500">
-                    {new Date(event.date).toLocaleDateString()} • 
+                    {formatDate(event.date)} • 
                     {leaderboard.entries.length} participant{leaderboard.entries.length === 1 ? '' : 's'}
                   </div>
                   {/* Show user's rank in this event */}

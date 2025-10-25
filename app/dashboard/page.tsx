@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Fish, Users, Calendar, MapPin, Clock, Star, Target, Trophy, Award, TrendingUp } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { formatDate } from '@/lib/utils'
 import type { LeaderboardEntry, EventLeaderboard } from '@/types'
 
 function LeaderboardCard() {
@@ -441,7 +442,7 @@ function RecentBookings() {
                 <h4 className="font-medium text-gray-900">{booking.pond}</h4>
                 <div className="flex items-center gap-1 text-sm text-gray-600">
                   <Clock className="h-3 w-3" />
-                  <span>{new Date(booking.date).toLocaleDateString()}</span>
+                  <span>{formatDate(booking.date)}</span>
                 </div>
                 {booking.catch && (
                   <div className="text-xs text-green-600 font-medium">{booking.catch}</div>

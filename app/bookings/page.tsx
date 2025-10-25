@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Fish, Calendar, Clock, MapPin, QrCode, Users, Trophy, AlertCircle, Trash2, User as UserIcon } from 'lucide-react'
+import { Fish, Calendar, Clock, MapPin, QrCode, Users, Trophy, AlertCircle, Trash2, User as UserIcon, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
 import { fetchCurrentUserFromSession } from '@/lib/api'
@@ -30,6 +30,7 @@ interface Booking {
   qrCode: string
   instructions?: string
   seats?: string[]
+  seatAssignments?: Array<{ assignedUserId?: number | null }> // For checking if seats need assignment
   // User information (for managers)
   userName?: string
   userEmail?: string
@@ -107,11 +108,49 @@ function TicketCard({ booking, onDelete }: { booking: Booking; onDelete: (bookin
             </div>
             {booking.seats && booking.seats.length > 0 && (
               <div>
-                <p className="text-gray-600">Seats</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-gray-600">Seats</p>
+                  {/* Only show Share icon for event bookings that are upcoming/active and have unassigned seats */}
+                  {isEventBooking && 
+                   (booking.status === 'upcoming' || booking.status === 'active') &&
+                   booking.seatAssignments && 
+                   booking.seatAssignments.some(seat => !seat.assignedUserId) && (
+                    <Link href={`/bookings/${booking.bookingId}/share`}>
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        className="h-6 w-6 p-0 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                        title="Share seats with other users"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                </div>
                 <p className="font-medium">{booking.seats.join(', ')}</p>
               </div>
             )}
           </div>
+          
+          {/* Seat Assignment Info for Event Bookings */}
+          {isEventBooking && booking.seats && booking.seats.length > 0 && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="h-4 w-4 text-purple-600" />
+                <span className="text-sm font-semibold text-purple-900">
+                  Seat Assignment
+                </span>
+              </div>
+              <p className="text-xs text-purple-700">
+                {booking.seats.length === 1 
+                  ? "You have 1 seat. Assign it to yourself or another user before check-in."
+                  : `You have ${booking.seats.length} seats. Share them with other users before check-in.`}
+              </p>
+              <div className="text-xs text-purple-600 mt-1">
+                Each seat has a unique QR code for check-in. Click <UserPlus className="inline h-3 w-3" /> to share.
+              </div>
+            </div>
+          )}
           
           {/* User Information (for managers) */}
           {booking.userName && (
@@ -135,14 +174,20 @@ function TicketCard({ booking, onDelete }: { booking: Booking; onDelete: (bookin
                   <div className="text-xs text-gray-500 leading-tight">Booking ID</div>
                 </div>
               </div>
-              <div className="flex-1 flex justify-center">
-                <Link href={`/ticket?bookingId=${booking.bookingId}&source=bookings`}>
-                  <Button size="sm" className="h-[40px] flex items-center gap-2 text-sm px-3">
-                    <QrCode className="h-4 w-4" />
-                    Show QR
-                  </Button>
-                </Link>
-              </div>
+              {/* Only show QR button for upcoming/active bookings */}
+              {(booking.status === 'upcoming' || booking.status === 'active') && (
+                <div className="flex-1 flex justify-center gap-2">
+                  <Link href={booking.type === 'event' && booking.seats && booking.seats.length > 0 
+                    ? `/my-seats?bookingId=${booking.bookingId}` 
+                    : `/ticket?bookingId=${booking.bookingId}&source=bookings`
+                  }>
+                    <Button size="sm" className="h-[40px] flex items-center gap-2 text-sm px-3">
+                      <QrCode className="h-4 w-4" />
+                      Show QR
+                    </Button>
+                  </Link>
+                </div>
+              )}
               <div className="text-right">
                 <Button 
                   variant="outline" 
@@ -241,7 +286,10 @@ function BookingsContent() {
         }
 
         // Create seat labels from seat data - show only seat numbers
-        const seatLabels = dbBooking.seats?.map(seat => seat.number.toString()) || []
+        // Handle both old 'seats' structure and new 'seatAssignments' structure
+        const seatLabels = (dbBooking.seats?.map((seat: any) => seat.number?.toString() || seat.seatNumber?.toString()) || 
+                           dbBooking.seatAssignments?.map((seat: any) => seat.seatNumber?.toString()) || 
+                           []).filter(Boolean)
 
         return {
           bookingId: dbBooking.bookingId,
@@ -256,6 +304,7 @@ function BookingsContent() {
           price: dbBooking.totalPrice,
           qrCode: dbBooking.bookingId.slice(-6).toUpperCase(), // Use last 6 chars of booking ID
           seats: seatLabels,
+          seatAssignments: dbBooking.seatAssignments, // Pass through seat assignment data
           instructions: dbBooking.type === 'event' 
             ? 'Arrive 30 minutes early for registration. Bring your own equipment and valid fishing license.'
             : 'Equipment rental available on-site. Check weather conditions before arrival.',
